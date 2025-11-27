@@ -1,0 +1,57 @@
+# Production Deployment with Cloud Databases
+# Uses MongoDB Atlas and Upstash Redis (managed services)
+# Run: docker-compose -f docker-compose.prod.yml up
+
+version: '3.8'
+
+services:
+  # Backend API - Production
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: whatsapp_bot_backend_prod
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=${MONGODB_URI}  # From .env - MongoDB Atlas
+      - REDIS_URL=${REDIS_URL}       # From .env - Upstash Redis
+      - JWT_SECRET=${JWT_SECRET}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - FRONTEND_URL=${FRONTEND_URL}
+    networks:
+      - whatsapp_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend - Production
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: whatsapp_bot_frontend_prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - whatsapp_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  whatsapp_network:
+    driver: bridge
