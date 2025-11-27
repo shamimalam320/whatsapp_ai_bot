@@ -1,0 +1,79 @@
+# Local Development with Docker
+# Run: docker-compose up
+# This uses local MongoDB and Redis containers for development
+
+version: '3.8'
+
+services:
+  # MongoDB - Local Development
+  mongodb:
+    image: mongo:7
+    container_name: whatsapp_bot_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: whatsapp_ai_bot
+    networks:
+      - whatsapp_network
+
+  # Redis - Local Development
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp_bot_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - whatsapp_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: whatsapp_bot_backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    # Load environment from backend/.env to allow OpenAI, Twilio, Upstash settings
+    env_file:
+      - ./backend/.env
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - JWT_SECRET=${JWT_SECRET:-your-dev-jwt-secret-change-in-production}
+      - FRONTEND_URL=http://localhost:5173
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - whatsapp_network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: whatsapp_bot_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - whatsapp_network
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  whatsapp_network:
+    driver: bridge
