@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuthStore } from '../store/authStore';
+import { createOrder as createOrderApi } from '../api/orders';
+import { getProducts } from '../api/products';
 
 interface OrderItem {
   productId: string;
@@ -22,6 +24,27 @@ interface Order {
   createdAt: string;
 }
 
+interface Product {
+  _id: string;
+  name: string;
+  price: number;
+  stock?: number;
+  category?: string;
+}
+
+interface CreateOrderItem {
+  productId: string;
+  quantity: number;
+}
+
+interface CreateOrderForm {
+  customerPhone: string;
+  customerName: string;
+  deliveryAddress: string;
+  notes: string;
+  items: CreateOrderItem[];
+}
+
 export default function Orders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -29,7 +52,17 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<string>('');
+  const [createForm, setCreateForm] = useState<CreateOrderForm>({
+    customerPhone: '',
+    customerName: '',
+    deliveryAddress: '',
+    notes: '',
+    items: [],
+  });
 
   const getToken = () => localStorage.getItem('token');
 
@@ -115,6 +148,140 @@ export default function Orders() {
     }
   };
 
+  const fetchProducts = async () => {
+    try {
+      const response = await getProducts({ limit: 100 });
+      if (response.success && response.data?.products) {
+        setProducts(response.data.products);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
+  };
+
+  const handleAddItem = () => {
+    if (!selectedProduct) {
+      alert('Please select a product');
+      return;
+    }
+
+    const existingItem = createForm.items.find(
+      (item) => item.productId === selectedProduct
+    );
+
+    if (existingItem) {
+      alert('Product already added. Update quantity instead.');
+      return;
+    }
+
+    const productObj = products.find((p) => p._id === selectedProduct);
+    if (!productObj) {
+      alert('Selected product not found');
+      return;
+    }
+    if ((productObj.stock ?? 0) <= 0) {
+      alert('Selected product is out of stock');
+      return;
+    }
+
+    setCreateForm({
+      ...createForm,
+      items: [...createForm.items, { productId: selectedProduct, quantity: 1 }],
+    });
+    setSelectedProduct('');
+  };
+
+  const handleUpdateQuantity = (productId: string, quantity: number) => {
+    if (quantity < 1) return;
+    const productObj = products.find((p) => p._id === productId);
+    const available = productObj?.stock ?? 0;
+    if (quantity > available) {
+      alert(`Cannot set quantity greater than available stock (${available})`);
+      return;
+    }
+    setCreateForm({
+      ...createForm,
+      items: createForm.items.map((item) =>
+        item.productId === productId ? { ...item, quantity } : item
+      ),
+    });
+  };
+
+  const handleRemoveItem = (productId: string) => {
+    setCreateForm({
+      ...createForm,
+      items: createForm.items.filter((item) => item.productId !== productId),
+    });
+  };
+
+  const calculateTotal = () => {
+    return createForm.items.reduce((total, item) => {
+      const product = products.find((p) => p._id === item.productId);
+      return total + (product?.price || 0) * item.quantity;
+    }, 0);
+  };
+
+  const hasStockIssues = () => {
+    // true if any item is requesting more than available or product is out of stock
+    return createForm.items.some((item) => {
+      const p = products.find((pr) => pr._id === item.productId);
+      const available = p?.stock ?? 0;
+      return available <= 0 || item.quantity > available;
+    });
+  };
+
+  const handleCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!createForm.customerPhone || createForm.items.length === 0) {
+      alert('Please provide customer phone and add at least one item');
+      return;
+    }
+
+    // Validate phone number (basic)
+    const phoneRegex = /^[+]?[\d\s()-]{10,}$/;
+    if (!phoneRegex.test(createForm.customerPhone)) {
+      alert('Please enter a valid phone number');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await createOrderApi({
+        customerPhone: createForm.customerPhone,
+        customerName: createForm.customerName || undefined,
+        deliveryAddress: createForm.deliveryAddress || undefined,
+        notes: createForm.notes || undefined,
+        items: createForm.items,
+      });
+
+      if (response.success) {
+        alert('Order created successfully! Confirmation sent to customer.');
+        setShowCreateModal(false);
+        setCreateForm({
+          customerPhone: '',
+          customerName: '',
+          deliveryAddress: '',
+          notes: '',
+          items: [],
+        });
+        fetchOrders();
+      } else {
+        alert(response.message || 'Failed to create order');
+      }
+    } catch (error: any) {
+      console.error('Error creating order:', error);
+      alert(error.message || 'Failed to create order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCreateModal = () => {
+    fetchProducts();
+    setShowCreateModal(true);
+  };
+
   useEffect(() => {
     fetchOrders();
   }, [statusFilter]);
@@ -157,7 +324,7 @@ export default function Orders() {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
           <button
-            onClick={() => alert('Create order feature coming soon!')}
+            onClick={openCreateModal}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
             + Create Order
@@ -386,6 +553,226 @@ export default function Orders() {
                   <p>Created: {formatDate(selectedOrder.createdAt)}</p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create Order Modal */}
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <form onSubmit={handleCreateOrder} className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Create New Order</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Customer Information */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-3">Customer Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={createForm.customerPhone}
+                        onChange={(e) =>
+                          setCreateForm({ ...createForm, customerPhone: e.target.value })
+                        }
+                        placeholder="+919876543210"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Customer Name
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.customerName}
+                        onChange={(e) =>
+                          setCreateForm({ ...createForm, customerName: e.target.value })
+                        }
+                        placeholder="John Doe"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Delivery Address
+                    </label>
+                    <textarea
+                      value={createForm.deliveryAddress}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, deliveryAddress: e.target.value })
+                      }
+                      rows={2}
+                      placeholder="Full delivery address"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Products Selection */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-3">
+                    Order Items <span className="text-red-500">*</span>
+                  </h3>
+                  <div className="flex gap-2 mb-4">
+                    <select
+                      value={selectedProduct}
+                      onChange={(e) => setSelectedProduct(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="">Select a product...</option>
+                      {products.map((product) => (
+                        <option key={product._id} value={product._id}>
+                          {product.name} - ₹{product.price}
+                          {product.stock !== undefined && ` (Stock: ${product.stock})`}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddItem}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      Add Item
+                    </button>
+                  </div>
+
+                  {/* Added Items */}
+                  {createForm.items.length === 0 ? (
+                    <p className="text-gray-500 text-sm text-center py-4 bg-gray-50 rounded-lg">
+                      No items added yet. Select a product and click "Add Item".
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {createForm.items.map((item) => {
+                        const product = products.find((p) => p._id === item.productId);
+                        if (!product) return null;
+                        return (
+                          <div
+                            key={item.productId}
+                            className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-900">{product.name}</p>
+                              <p className="text-sm text-gray-500">₹{product.price} each</p>
+                            </div>
+                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateQuantity(item.productId, item.quantity - 1)
+                                  }
+                                  disabled={item.quantity <= 1}
+                                  className={`w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded ${item.quantity <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+                                >
+                                  -
+                                </button>
+                                <span className="w-12 text-center font-medium">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateQuantity(item.productId, item.quantity + 1)
+                                  }
+                                  disabled={item.quantity >= (product.stock ?? 0)}
+                                  className={`w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded ${(item.quantity >= (product.stock ?? 0)) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <p className="font-semibold text-gray-900 w-20 text-right">
+                                ₹{product.price * item.quantity}
+                              </p>
+                              <div className="ml-3 text-right w-32">
+                                {product.stock !== undefined && (
+                                  <p className={`text-xs ${product.stock === 0 ? 'text-red-600' : product.stock <= 5 ? 'text-yellow-600' : 'text-gray-500'}`}>
+                                    {product.stock === 0 ? 'Out of stock' : `Only ${product.stock} left`}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.productId)}
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                <svg
+                                  className="w-5 h-5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="pt-3 border-t border-gray-300 flex justify-between items-center">
+                        <p className="text-lg font-bold text-gray-900">Total Amount</p>
+                        <p className="text-lg font-bold text-green-600">
+                          ₹{calculateTotal().toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Order Notes
+                  </label>
+                  <textarea
+                    value={createForm.notes}
+                    onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+                    rows={2}
+                    placeholder="Any special instructions or notes"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                {/* Submit Buttons */}
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || createForm.items.length === 0 || hasStockIssues()}
+                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Creating...' : 'Create Order'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

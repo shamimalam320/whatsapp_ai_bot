@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IBusiness extends Document {
   category?: 'clinic'|'retail'|'restaurant'|'salon'|'general';
   name: string;
+  address?: string;
   whatsappNumber: string;
   industry: string;
   languages: ('hindi' | 'english' | 'hinglish')[];
@@ -38,6 +39,11 @@ const businessSchema = new Schema<IBusiness>({
     type: String,
     required: [true, 'Business name is required'],
     trim: true
+  },
+  // Business address stored as simple string
+  address: {
+    type: String,
+    default: ''
   },
   // Category / template support
   category: {

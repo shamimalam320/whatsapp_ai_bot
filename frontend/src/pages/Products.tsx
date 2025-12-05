@@ -8,6 +8,10 @@ interface Product {
   _id: string;
   name: string;
   nameHindi?: string;
+  size?: string;
+  color?: string;
+  weight?: number;
+  weightUnit?: 'gram' | 'kg';
   description?: string;
   price: number;
   category: string;
@@ -34,6 +38,10 @@ export default function Products() {
   const [formData, setFormData] = useState({
     name: '',
     nameHindi: '',
+    size: '',
+    color: '',
+    weight: '',
+    weightUnit: 'gram' as 'gram' | 'kg',
     description: '',
     price: '',
     category: '',
@@ -91,6 +99,10 @@ export default function Products() {
           ...formData,
           price: Number(formData.price),
           stock: Number(formData.stock) || 0,
+          weight: formData.weight ? Number(formData.weight) : undefined,
+          size: formData.size || undefined,
+          color: formData.color || undefined,
+          weightUnit: formData.weight ? formData.weightUnit : undefined,
         };
 
         let data;
@@ -106,6 +118,10 @@ export default function Products() {
           setFormData({
             name: '',
             nameHindi: '',
+            size: '',
+            color: '',
+            weight: '',
+            weightUnit: 'gram',
             description: '',
             price: '',
             category: '',
@@ -139,6 +155,10 @@ export default function Products() {
     setFormData({
       name: product.name,
       nameHindi: product.nameHindi || '',
+      size: product.size || '',
+      color: product.color || '',
+      weight: product.weight?.toString() || '',
+      weightUnit: product.weightUnit || 'gram',
       description: product.description || '',
       price: product.price.toString(),
       category: product.category,
@@ -240,6 +260,10 @@ export default function Products() {
                 setFormData({
                   name: '',
                   nameHindi: '',
+                  size: '',
+                  color: '',
+                  weight: '',
+                  weightUnit: 'gram',
                   description: '',
                   price: '',
                   category: '',
@@ -337,7 +361,16 @@ export default function Products() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        ₹{product.price.toLocaleString()}
+                        <div>
+                          <div>₹{product.price.toLocaleString()}</div>
+                          {(product.size || product.color || product.weight) && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {product.size && <span className="mr-2">Size: {product.size}</span>}
+                              {product.color && <span className="mr-2">Color: {product.color}</span>}
+                              {product.weight && <span>Weight: {product.weight}{product.weightUnit}</span>}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {product.stock || 0}
@@ -388,10 +421,10 @@ export default function Products() {
               {editingProduct ? 'Edit Product' : 'Add New Product'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name (English) *
+                    Product Name *
                   </label>
                   <input
                     type="text"
@@ -400,18 +433,6 @@ export default function Products() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="e.g., Smart Watch"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name (Hindi)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.nameHindi}
-                    onChange={(e) => setFormData({ ...formData, nameHindi: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="e.g., स्मार्ट वॉच"
                   />
                 </div>
               </div>
@@ -497,6 +518,66 @@ export default function Products() {
                 </div>
               </div>
 
+              {/* Product Attributes */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Size
+                  </label>
+                  <select
+                    value={formData.size}
+                    onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Size</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="XXL">XXL</option>
+                    <option value="XXXL">XXXL</option>
+                    <option value="Free Size">Free Size</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Color
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.color}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="e.g., Red, Blue"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Weight
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.weight}
+                      onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="100"
+                    />
+                    <select
+                      value={formData.weightUnit}
+                      onChange={(e) => setFormData({ ...formData, weightUnit: e.target.value as 'gram' | 'kg' })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="gram">gram</option>
+                      <option value="kg">kg</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
@@ -523,7 +604,7 @@ export default function Products() {
           <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-6">Bulk Upload Products (CSV)</h2>
             <div className="text-sm text-gray-700 mb-4">
-              Upload a CSV with headers: name, nameHindi, description, price, category, stock, images (semicolon separated), variants (name:price; semicolon separated)
+              Upload a CSV with headers: name, nameHindi, description, price, category, stock, size, color, weight, weightUnit (gram/kg), images (semicolon separated)
             </div>
             <input type="file" accept="text/csv,text/plain" onChange={(e) => handleBulkUploadFile(e.target.files?.[0] || null)} disabled={bulkUploading} />
             <div className="flex justify-end space-x-3 mt-6">
