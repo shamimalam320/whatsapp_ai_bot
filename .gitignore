@@ -43,3 +43,7 @@ temp/
 .vercel
 .railway
 .render
+
+# Allow per-package lockfiles for workspace submodules (we commit backend/frontend lockfiles)
+!/backend/package-lock.json
+!/frontend/package-lock.json

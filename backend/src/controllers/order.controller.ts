@@ -311,9 +311,14 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     const oldStatus = order.status;
 
     // Use a transaction when modifying stocks during status changes
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
+    // We'll attempt the transactional status update with a small retry loop to handle transient write conflicts
+    let attempt = 0;
+    const maxAttempts = 3;
+    let lastErr: any = null;
+    while (attempt < maxAttempts) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
       // If transitioning from non-cancelled -> cancelled, restore stock
       if (status === 'cancelled' && order.status !== 'cancelled') {
         for (const it of order.items) {
@@ -351,14 +356,23 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       order.status = status;
       await order.save({ session });
 
-      await session.commitTransaction();
-      session.endSession();
-    } catch (err) {
-      try {
-        if (session.inTransaction()) await session.abortTransaction();
-      } catch (e) {}
-      try { session.endSession(); } catch (e) {}
-      throw err;
+        await session.commitTransaction();
+        session.endSession();
+        lastErr = null;
+        break; // success
+      } catch (err: any) {
+        lastErr = err;
+        try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+        try { session.endSession(); } catch (e) {}
+        // If this is a write-conflict, try again; otherwise rethrow
+        const isWriteConflict = /writeconflict/i.test(String(err?.message || '')) || err?.code === 112;
+        attempt++;
+        if (!isWriteConflict || attempt >= maxAttempts) {
+          throw err;
+        }
+        // small backoff
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+      }
     }
 
     // Send status update message
@@ -381,7 +395,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
 
     logger.info(`Order ${order._id} status updated to ${status}`);
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: 'Order status updated',
       data: order,
