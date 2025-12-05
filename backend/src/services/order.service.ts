@@ -185,6 +185,27 @@ Please reply with the number or name of the product.`;
         return 'Error: Chat not found. Please try again.';
       }
 
+      // Before creating order make sure stock is available and reserve stock
+      for (const it of pendingOrder.items) {
+        const prod = await Product.findById(it.productId);
+        const available = prod?.stock ?? 0;
+        if (available < it.quantity) {
+          // do not create, inform customer
+          pendingOrders.delete(chatId);
+          return `Sorry, we don't have enough stock for ${it.productName}. Available: ${available}, you requested: ${it.quantity}. Please choose a smaller quantity or another product.`;
+        }
+      }
+
+      // Reserve (decrement) stock
+      for (const it of pendingOrder.items) {
+        await Product.findByIdAndUpdate(it.productId, { $inc: { stock: -it.quantity } });
+        const p = await Product.findById(it.productId);
+        if (p) {
+          p.inStock = !!p.stock && p.stock > 0;
+          await p.save();
+        }
+      }
+
       const order = await Order.create({
         businessId,
         chatId,

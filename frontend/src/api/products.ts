@@ -3,6 +3,10 @@ import { fetchJson } from './index';
 export interface ProductPayload {
   name: string;
   nameHindi?: string;
+  size?: string;
+  color?: string;
+  weight?: number;
+  weightUnit?: 'gram' | 'kg';
   description?: string;
   price: number;
   category: string;

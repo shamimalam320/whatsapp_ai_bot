@@ -186,7 +186,9 @@ export default function Settings() {
 
       if (data.success) {
         setMessage('✅ Profile updated successfully!');
-        setProfile(data.data);
+        // Re-fetch profile from server to ensure we show the canonical saved data
+        // (keeps UI consistent if backend normalizes or stores address differently)
+        fetchProfile();
       } else {
         setError(data.message || 'Failed to update profile');
       }
