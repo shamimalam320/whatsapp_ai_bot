@@ -13,3 +13,12 @@ export async function uploadImage(file: File) {
 
   return res.json();
 }
+
+export async function deleteImage(filename: string) {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_BASE}/api/uploads/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  return res.json();
+}

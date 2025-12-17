@@ -10,6 +10,14 @@ export interface CreateOrderPayload {
   customerName?: string;
   items: OrderItem[];
   deliveryAddress?: string;
+  delivery?: {
+    pincode?: string;
+    state?: string;
+    city?: string;
+    locality?: string;
+    addressLine?: string;
+    landmark?: string;
+  };
   notes?: string;
 }
 
