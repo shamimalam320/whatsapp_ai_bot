@@ -358,10 +358,10 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       order.status = status;
       await order.save({ session });
 
-        await session.commitTransaction();
-        session.endSession();
-        lastErr = null;
-        break; // success
+      await session.commitTransaction();
+      session.endSession();
+      lastErr = null;
+      break; // success
       } catch (err: any) {
         lastErr = err;
         try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
