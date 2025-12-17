@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { startInMemoryMongo, stopInMemoryMongo, clearDatabase } from './setup';
 import Product from '../src/models/Product';
-import Order from '../src/models/Order';
 import { createOrder, updateOrderStatus } from '../src/controllers/order.controller';
 
 // mock whatsapp to avoid external calls
