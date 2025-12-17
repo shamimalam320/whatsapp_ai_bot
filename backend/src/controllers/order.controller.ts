@@ -104,7 +104,7 @@ export const createOrder = async (req: Request, res: Response) => {
   let session: any = undefined;
   let createdOrder: any = undefined;
   try {
-    const { customerPhone, customerName, items, deliveryAddress, notes } = req.body;
+    const { customerPhone, customerName, items, deliveryAddress, delivery, notes } = req.body;
     const businessId = req.user?.businessId;
 
     if (!businessId) {
@@ -219,6 +219,7 @@ export const createOrder = async (req: Request, res: Response) => {
             totalAmount,
             status: 'pending',
             deliveryAddress,
+            delivery: delivery || undefined,
             notes,
           },
         ],
@@ -247,6 +248,7 @@ ${orderSummary}
 
 Total: ₹${totalAmount}
 ${deliveryAddress ? `\nDelivery Address: ${deliveryAddress}` : ''}
+${delivery ? `\n(Parsed: ${[delivery.addressLine, delivery.locality, delivery.city, delivery.state, delivery.pincode].filter(Boolean).join(', ')})` : ''}
 
 We'll notify you when your order is ready for delivery.
 Thank you for your order! 🙏`;

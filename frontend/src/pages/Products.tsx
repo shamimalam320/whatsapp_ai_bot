@@ -34,6 +34,7 @@ export default function Products() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingOriginalImages, setEditingOriginalImages] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     name: '',
@@ -48,6 +49,79 @@ export default function Products() {
     stock: '',
     images: [] as string[],
   });
+
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+  const isLikelyImage = (s?: string) => {
+    if (!s) return false;
+    if (/^https?:\/\//i.test(s)) return true;
+    if (/^\/uploads|^uploads\//i.test(s)) return true;
+    // file name or path with common image extension
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+    return false;
+  };
+
+  const resolveImageSrc = (src?: string) => {
+    if (!src) return '';
+    if (!isLikelyImage(src)) return '';
+    if (!src) return '';
+
+    // If absolute URL, but points to a different host (e.g., Vite dev host),
+    // rewrite to use API_BASE when the path looks like /uploads/...
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      try {
+        const u = new URL(src);
+        const apiOrigin = new URL(API_BASE).origin;
+        if (u.pathname.startsWith('/uploads') && u.origin !== apiOrigin) {
+          return `${API_BASE}${u.pathname}`;
+        }
+        return src;
+      } catch (e) {
+        return src; // fall back if malformed
+      }
+    }
+
+    // If the path already includes uploads (with or without leading slash),
+    // ensure we prefix with API_BASE and keep a single leading slash.
+    if (src.startsWith('/uploads') || src.startsWith('uploads/')) {
+      const pathOnly = src.startsWith('/') ? src : '/' + src;
+      return `${API_BASE}${pathOnly}`;
+    }
+
+    // If it's just a filename (e.g. 'abc.jpg'), assume it's stored in uploads folder
+    if (!src.includes('/')) {
+      return `${API_BASE}/uploads/${src}`;
+    }
+
+    // As a fallback, prefix API_BASE so absolute resolution happens
+    return `${API_BASE}${src.startsWith('/') ? '' : '/'}${src}`;
+  };
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, originalSrc?: string) => {
+    const img = e.currentTarget as HTMLImageElement & { dataset: any };
+    try {
+      // Try 1: if original is relative (/uploads/...), prefix API_BASE
+      if (!img.dataset.tried && originalSrc) {
+        img.dataset.tried = '1';
+        const fallback = `${API_BASE}${originalSrc.startsWith('/') ? '' : '/'}${originalSrc}`;
+        if (fallback !== img.src) { img.src = fallback; return; }
+      }
+
+      // Try 2: use basename in uploads folder
+      if (!img.dataset.tried2 && originalSrc) {
+        img.dataset.tried2 = '1';
+        const parts = originalSrc.split('/');
+        const basename = parts[parts.length - 1];
+        const fallback2 = `${API_BASE}/uploads/${basename}`;
+        if (fallback2 !== img.src) { img.src = fallback2; return; }
+      }
+
+      // Final: hide the broken image to avoid broken icon
+      img.style.display = 'none';
+    } catch (err) {
+      img.style.display = 'none';
+    }
+  };
 
   // API client is used (token handled centrally)
 
@@ -107,7 +181,11 @@ export default function Products() {
 
         let data;
         if (editingProduct) {
-          data = await productApi.updateProduct(editingProduct._id, payload);
+            // detect images deleted during edit so backend can remove files
+            const orig = editingOriginalImages || [];
+            const keep = payload.images || [];
+            const deletedImages = orig.filter(i => !keep.includes(i));
+            data = await productApi.updateProduct(editingProduct._id, { ...payload, deletedImages });
         } else {
           data = await productApi.createProduct(payload as any);
         }
@@ -165,6 +243,7 @@ export default function Products() {
       stock: product.stock?.toString() || '',
       images: product.images || [],
     });
+    setEditingOriginalImages(product.images || []);
     setShowModal(true);
   };
 
@@ -341,10 +420,10 @@ export default function Products() {
                       <td className="px-6 py-4">
                         <div>
                               <div className="flex items-center gap-3">
-                                {product.images && product.images.length > 0 ? (
-                                  <img src={product.images[0]} alt={product.name} className="w-10 h-10 object-cover rounded" />
-                                ) : (
-                                  <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400">No</div>
+                                        {product.images && product.images.length > 0 && resolveImageSrc(product.images[0]) ? (
+                                                  <img src={resolveImageSrc(product.images[0])} alt={product.name} className="w-14 h-14 object-cover rounded-lg shadow-sm" onError={(e) => handleImageError(e, product.images?.[0])} />
+                                        ) : (
+                                          <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-400">No</div>
                                 )}
                                 <div>
                                   <div className="text-sm font-medium text-gray-900">{product.name}</div>
@@ -492,38 +571,10 @@ export default function Products() {
                     placeholder="10"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Images</label>
-                  <input type="file" accept="image/*" multiple onChange={async (e) => {
-                    const files = e.target.files;
-                    if (!files) return;
-                    const arr = Array.from(files);
-                    const uploaded: string[] = [];
-                    for (const f of arr) {
-                      try {
-                        const { uploadImage } = await import('../api/uploads');
-                        const r: any = await uploadImage(f);
-                        if (r.success && r.data?.url) uploaded.push(r.data.url);
-                      } catch (err) { console.error('Image upload failed', err); }
-                    }
-                    setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...uploaded] }));
-                  }} />
-                  {formData.images && formData.images.length > 0 && (
-                    <div className="mt-2 flex gap-2">
-                      {formData.images.map((src, idx) => (
-                        <img key={idx} src={src} alt="product" className="w-12 h-12 object-cover rounded" />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Product Attributes */}
-              <div className="grid grid-cols-3 gap-4">
+                {/* Product Attributes: Size / Color / Weight */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Size
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
                   <select
                     value={formData.size}
                     onChange={(e) => setFormData({ ...formData, size: e.target.value })}
@@ -536,14 +587,12 @@ export default function Products() {
                     <option value="L">L</option>
                     <option value="XL">XL</option>
                     <option value="XXL">XXL</option>
-                    <option value="XXXL">XXXL</option>
                     <option value="Free Size">Free Size</option>
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Color
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
                   <input
                     type="text"
                     value={formData.color}
@@ -552,10 +601,9 @@ export default function Products() {
                     placeholder="e.g., Red, Blue"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Weight
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -563,13 +611,13 @@ export default function Products() {
                       step="0.01"
                       value={formData.weight}
                       onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-2/3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       placeholder="100"
                     />
                     <select
                       value={formData.weightUnit}
                       onChange={(e) => setFormData({ ...formData, weightUnit: e.target.value as 'gram' | 'kg' })}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-1/3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     >
                       <option value="gram">gram</option>
                       <option value="kg">kg</option>
@@ -577,6 +625,39 @@ export default function Products() {
                   </div>
                 </div>
               </div>
+
+              {/* Move Images to the bottom of the modal so other product fields are primary */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Images</label>
+                <input type="file" accept="image/*" multiple onChange={async (e) => {
+                  const files = e.target.files;
+                  if (!files) return;
+                  const arr = Array.from(files);
+                  const uploaded: string[] = [];
+                  for (const f of arr) {
+                    try {
+                      const { uploadImage } = await import('../api/uploads');
+                      const r: any = await uploadImage(f);
+                      if (r.success && r.data?.url) uploaded.push(r.data.url);
+                    } catch (err) { console.error('Image upload failed', err); }
+                  }
+                  setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...uploaded] }));
+                }} />
+                {formData.images && formData.images.length > 0 && (
+                  <div className="mt-3 flex gap-3">
+                    {formData.images.filter(s => resolveImageSrc(s)).map((src, idx) => (
+                      <div key={idx} className="relative">
+                        <img src={resolveImageSrc(src)} alt="product" className="w-20 h-20 object-cover rounded-lg shadow-sm" onError={(e) => handleImageError(e, src ?? undefined)} />
+                        <button type="button" onClick={() => {
+                          setFormData(prev => ({ ...prev, images: prev.images?.filter(x => x !== src) || [] }));
+                        }} className="absolute -top-2 -right-2 bg-white text-red-600 rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* (attributes moved earlier) - removed duplicate block */}
 
               <div className="flex justify-end space-x-3 mt-6">
                 <button

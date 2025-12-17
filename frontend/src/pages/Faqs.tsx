@@ -112,8 +112,8 @@ export default function Faqs() {
         <div className="bg-white rounded-lg p-6 mb-6">
           <h2 className="font-semibold mb-3">Add FAQ</h2>
           <form onSubmit={handleAdd} className="space-y-3">
-            <input className="w-full px-3 py-2 border rounded" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question (English)" required />
-            <textarea className="w-full px-3 py-2 border rounded" value={answerEn} onChange={e=>setAnswerEn(e.target.value)} placeholder="Answer (English)" rows={3} required />
+            <input className="w-full px-3 py-2 border rounded" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" required />
+            <textarea className="w-full px-3 py-2 border rounded" value={answerEn} onChange={e=>setAnswerEn(e.target.value)} placeholder="Answer" rows={3} required />
             <div className="flex justify-end">
               <button className="px-4 py-2 bg-indigo-600 text-white rounded" type="submit">Add FAQ</button>
             </div>

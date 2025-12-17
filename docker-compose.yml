@@ -51,6 +51,8 @@ services:
     depends_on:
       - mongodb
       - redis
+    volumes:
+      - ./backend/uploads:/app/uploads
     networks:
       - whatsapp_network
 

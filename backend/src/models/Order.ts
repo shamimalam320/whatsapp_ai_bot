@@ -14,6 +14,14 @@ export interface IOrder extends Document {
   totalAmount: number;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   deliveryAddress?: string;
+  delivery?: {
+    pincode?: string;
+    state?: string;
+    city?: string;
+    locality?: string;
+    addressLine?: string;
+    landmark?: string;
+  };
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +82,14 @@ const orderSchema = new Schema<IOrder>({
   },
   deliveryAddress: {
     type: String
+  },
+  delivery: {
+    pincode: { type: String },
+    state: { type: String },
+    city: { type: String },
+    locality: { type: String },
+    addressLine: { type: String },
+    landmark: { type: String }
   },
   notes: {
     type: String

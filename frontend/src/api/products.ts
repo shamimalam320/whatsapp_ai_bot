@@ -12,6 +12,7 @@ export interface ProductPayload {
   category: string;
   stock?: number;
   images?: string[];
+  deletedImages?: string[];
 }
 
 export interface GetProductsParams {

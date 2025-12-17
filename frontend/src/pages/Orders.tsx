@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getPincodeDetails } from '../api/locations';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuthStore } from '../store/authStore';
@@ -20,6 +21,14 @@ interface Order {
   totalAmount: number;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   deliveryAddress?: string;
+  delivery?: {
+    pincode?: string;
+    state?: string;
+    city?: string;
+    locality?: string;
+    addressLine?: string;
+    landmark?: string;
+  };
   notes?: string;
   createdAt: string;
 }
@@ -40,7 +49,13 @@ interface CreateOrderItem {
 interface CreateOrderForm {
   customerPhone: string;
   customerName: string;
-  deliveryAddress: string;
+  // structured address fields for nicer UX
+  pincode?: string;
+  state?: string;
+  city?: string;
+  locality?: string; // suggested post office / area
+  addressLine?: string; // street / house
+  landmark?: string;
   notes: string;
   items: CreateOrderItem[];
 }
@@ -54,15 +69,25 @@ export default function Orders() {
   const [showModal, setShowModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const hasNonConfirmedSelected = selectedOrders.some((id) => (orders.find((o) => o._id === id)?.status !== 'confirmed'));
+  const hasConfirmedSelected = selectedOrders.some((id) => (orders.find((o) => o._id === id)?.status === 'confirmed'));
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<string>('');
   const [createForm, setCreateForm] = useState<CreateOrderForm>({
     customerPhone: '',
     customerName: '',
-    deliveryAddress: '',
+    pincode: '',
+    state: '',
+    city: '',
+    locality: '',
+    addressLine: '',
+    landmark: '',
     notes: '',
     items: [],
   });
+
+  const [pincodeLoading, setPincodeLoading] = useState(false);
 
   const getToken = () => localStorage.getItem('token');
 
@@ -103,6 +128,8 @@ export default function Orders() {
 
       const result = await response.json();
       setOrders(result.data.orders);
+      // Clear selection after fetching new data to avoid stale IDs
+      setSelectedOrders([]);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
       alert(error.message || 'Failed to load orders');
@@ -143,6 +170,44 @@ export default function Orders() {
     } catch (error: any) {
       console.error('Error updating status:', error);
       alert('Failed to update order status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelectOrder = (orderId: string) => {
+    setSelectedOrders((prev) => (prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]));
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrders.length === orders.length) {
+      setSelectedOrders([]);
+    } else {
+      setSelectedOrders(orders.map((o) => o._id));
+    }
+  };
+
+  const bulkUpdateStatus = async (newStatus: string) => {
+    if (selectedOrders.length === 0) return;
+    if (!window.confirm(`Mark ${selectedOrders.length} selected order(s) as ${newStatus}?`)) return;
+    setLoading(true);
+    try {
+      const authToken = getToken();
+      if (!authToken) { navigate('/login'); return; }
+      await Promise.all(
+        selectedOrders.map((id) =>
+          fetch(`http://localhost:5000/api/orders/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+            body: JSON.stringify({ status: newStatus }),
+          })
+        )
+      );
+      setSelectedOrders([]);
+      fetchOrders();
+    } catch (err) {
+      console.error('Bulk update failed', err);
+      alert('Bulk update failed');
     } finally {
       setLoading(false);
     }
@@ -247,10 +312,31 @@ export default function Orders() {
 
     setLoading(true);
     try {
+      // Build a human-friendly delivery address string from structured fields (if present)
+      let deliveryAddress: string | undefined = undefined;
+      if (createForm.addressLine || createForm.locality || createForm.city || createForm.state || createForm.pincode) {
+        const parts: string[] = [];
+        if (createForm.addressLine) parts.push(createForm.addressLine);
+        if (createForm.locality) parts.push(createForm.locality);
+        if (createForm.city) parts.push(createForm.city);
+        if (createForm.state) parts.push(createForm.state);
+        if (createForm.pincode) parts.push(createForm.pincode);
+        deliveryAddress = parts.join(', ');
+        if (createForm.landmark) deliveryAddress += ` (Landmark: ${createForm.landmark})`;
+      }
+
       const response = await createOrderApi({
         customerPhone: createForm.customerPhone,
         customerName: createForm.customerName || undefined,
-        deliveryAddress: createForm.deliveryAddress || undefined,
+        deliveryAddress: deliveryAddress || undefined,
+        delivery: {
+          pincode: createForm.pincode || undefined,
+          state: createForm.state || undefined,
+          city: createForm.city || undefined,
+          locality: createForm.locality || undefined,
+          addressLine: createForm.addressLine || undefined,
+          landmark: createForm.landmark || undefined,
+        },
         notes: createForm.notes || undefined,
         items: createForm.items,
       });
@@ -261,7 +347,12 @@ export default function Orders() {
         setCreateForm({
           customerPhone: '',
           customerName: '',
-          deliveryAddress: '',
+          pincode: '',
+          state: '',
+          city: '',
+          locality: '',
+          addressLine: '',
+          landmark: '',
           notes: '',
           items: [],
         });
@@ -274,6 +365,25 @@ export default function Orders() {
       alert(error.message || 'Failed to create order');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Pincode lookup helper (auto-fill state/city/localities)
+  const lookupPincode = async (pincode: string) => {
+    if (!/^[0-9]{6}$/.test(pincode)) {
+      return;
+    }
+    setPincodeLoading(true);
+    try {
+      const resp: any = await getPincodeDetails(pincode);
+      if (resp?.success && resp.data) {
+          const data = resp.data;
+          setCreateForm((prev) => ({ ...prev, state: data.states?.[0] || prev.state, city: data.districts?.[0] || prev.city }));
+        }
+    } catch (err) {
+      console.error('Pincode lookup failed', err);
+    } finally {
+      setPincodeLoading(false);
     }
   };
 
@@ -361,10 +471,60 @@ export default function Orders() {
 
         {/* Orders Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
+          {selectedOrders.length > 0 && (
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="text-sm text-gray-700">{selectedOrders.length} selected</div>
+                <div className="flex items-center gap-2">
+                {hasNonConfirmedSelected && (
+                  <button
+                    onClick={() => bulkUpdateStatus('confirmed')}
+                    disabled={loading}
+                    className="px-3 py-1 bg-green-600 text-white rounded-md text-sm"
+                  >
+                    Mark confirmed
+                  </button>
+                )}
+
+                {hasConfirmedSelected && (
+                  <button
+                    onClick={() => bulkUpdateStatus('completed')}
+                    disabled={loading}
+                    className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm"
+                  >
+                    Mark completed
+                  </button>
+                )}
+
+                <button
+                  onClick={() => bulkUpdateStatus('cancelled')}
+                  disabled={loading}
+                  className="px-3 py-1 bg-red-600 text-white rounded-md text-sm"
+                >
+                  Mark cancelled
+                </button>
+
+                <button
+                  onClick={() => setSelectedOrders([])}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-sm"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={orders.length > 0 && selectedOrders.length === orders.length}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all orders"
+                      className="w-4 h-4"
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Order ID
                   </th>
@@ -391,7 +551,7 @@ export default function Orders() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center">
                         <svg
                           className="w-16 h-16 mb-4 text-gray-300"
@@ -414,6 +574,15 @@ export default function Orders() {
                 ) : (
                   filteredOrders.map((order) => (
                     <tr key={order._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrders.includes(order._id)}
+                          onChange={() => toggleSelectOrder(order._id)}
+                          aria-label={`Select order ${order._id}`}
+                          className="w-4 h-4"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         #{order._id.slice(-6).toUpperCase()}
                       </td>
@@ -489,10 +658,13 @@ export default function Orders() {
                     <p className="text-sm">
                       <span className="font-medium">Phone:</span> {selectedOrder.customerPhone}
                     </p>
-                    {selectedOrder.deliveryAddress && (
-                      <p className="text-sm">
-                        <span className="font-medium">Address:</span> {selectedOrder.deliveryAddress}
-                      </p>
+                    {selectedOrder.delivery && (
+                      <div className="text-sm mt-2">
+                        <p className="font-medium">Address</p>
+                        <p className="text-xs mt-1">{selectedOrder.delivery.addressLine || ''}</p>
+                        <p className="text-xs">{[selectedOrder.delivery.locality, selectedOrder.delivery.city, selectedOrder.delivery.state, selectedOrder.delivery.pincode].filter(Boolean).join(', ')}</p>
+                        {selectedOrder.delivery.landmark && <p className="text-xs text-gray-600">Landmark: {selectedOrder.delivery.landmark}</p>}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -613,15 +785,80 @@ export default function Orders() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Delivery Address
                     </label>
-                    <textarea
-                      value={createForm.deliveryAddress}
-                      onChange={(e) =>
-                        setCreateForm({ ...createForm, deliveryAddress: e.target.value })
-                      }
-                      rows={2}
-                      placeholder="Full delivery address"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
+                    <div className="mt-3">
+                      <label className="text-xs text-gray-500">Address line</label>
+                      <input
+                        type="text"
+                        value={createForm.addressLine || ''}
+                        onChange={(e) => setCreateForm({ ...createForm, addressLine: e.target.value })}
+                        placeholder="Flat, building, street"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Locality / Area</label>
+                        <input
+                          type="text"
+                          value={createForm.locality || ''}
+                          onChange={(e) => setCreateForm({ ...createForm, locality: e.target.value })}
+                          placeholder="Locality / Area"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500">City / District</label>
+                        <input
+                          type="text"
+                          value={createForm.city || ''}
+                          onChange={(e) => setCreateForm({ ...createForm, city: e.target.value })}
+                          placeholder="City / District"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Landmark (optional)</label>
+                        <input
+                          type="text"
+                          value={createForm.landmark || ''}
+                          onChange={(e) => setCreateForm({ ...createForm, landmark: e.target.value })}
+                          placeholder="e.g., Near Central Park"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500">Pincode</label>
+                        <input
+                          type="text"
+                          value={createForm.pincode || ''}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9]/g, '').slice(0,6);
+                            setCreateForm({ ...createForm, pincode: v });
+                            if (v.length === 6) lookupPincode(v);
+                          }}
+                          placeholder="e.g., 560001"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                        {pincodeLoading && <p className="text-xs text-gray-400 mt-1">Looking up pincode…</p>}
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500">State</label>
+                        <input
+                          type="text"
+                          value={createForm.state || ''}
+                          onChange={(e) => setCreateForm({ ...createForm, state: e.target.value })}
+                          placeholder="State"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 

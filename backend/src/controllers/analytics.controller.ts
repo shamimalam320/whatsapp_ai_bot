@@ -20,8 +20,9 @@ export const getOverview = async (req: Request, res: Response) => {
 
     const [ProductModel, ChatModel, OrderModel] = await Promise.all([Product, Chat, Order]);
 
+    // Count only active products to match product listing which shows only active products
     const [productCount, chatCount, orderCount, customerPhones] = await Promise.all([
-      ProductModel.countDocuments({ businessId }),
+      ProductModel.countDocuments({ businessId, isActive: true }),
       ChatModel.countDocuments({ businessId }),
       OrderModel.countDocuments({ businessId }),
       ChatModel.distinct('customerPhone', { businessId })
@@ -64,6 +65,7 @@ export const getDashboard = async (req: Request, res: Response) => {
 
     // Run all analytics queries in parallel
     const [
+      // Count only active products in dashboard summary to match the Products list
       totalProducts,
       totalChats,
       totalOrders,
@@ -79,7 +81,7 @@ export const getDashboard = async (req: Request, res: Response) => {
       completedOrders,
       cancelledOrders
     ] = await Promise.all([
-      ProductModel.countDocuments({ businessId }),
+      ProductModel.countDocuments({ businessId, isActive: true }),
       ChatModel.countDocuments({ businessId }),
       OrderModel.countDocuments({ businessId }),
       FaqModel.countDocuments({ businessId }),
@@ -162,6 +164,7 @@ export const getDashboard = async (req: Request, res: Response) => {
       success: true,
       data: {
         summary: {
+          // For dashboard totalProducts we also use active products count so it matches the product listing
           totalProducts,
           activeProducts,
           totalChats,
