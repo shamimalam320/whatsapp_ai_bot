@@ -321,39 +321,39 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       const session = await mongoose.startSession();
       session.startTransaction();
       try {
-      // If transitioning from non-cancelled -> cancelled, restore stock
-      if (status === 'cancelled' && order.status !== 'cancelled') {
-        for (const it of order.items) {
-          await Product.findByIdAndUpdate(it.productId, { $inc: { stock: it.quantity } }, { session });
-          const p = await Product.findById(it.productId).session(session);
-          if (p) {
-            p.inStock = !!p.stock && p.stock > 0;
-            await p.save({ session });
+        // If transitioning from non-cancelled -> cancelled, restore stock
+        if (status === 'cancelled' && order.status !== 'cancelled') {
+          for (const it of order.items) {
+            await Product.findByIdAndUpdate(it.productId, { $inc: { stock: it.quantity } }, { session });
+            const p = await Product.findById(it.productId).session(session);
+            if (p) {
+              p.inStock = !!p.stock && p.stock > 0;
+              await p.save({ session });
+            }
           }
         }
-      }
 
-      // If transitioning from cancelled -> non-cancelled (e.g., re-confirm), ensure stock available and reserve again
-      if (order.status === 'cancelled' && status !== 'cancelled') {
-        // verify availability and decrement atomically
-        for (const it of order.items) {
-          const updated = await Product.findOneAndUpdate(
-            { _id: it.productId, stock: { $gte: it.quantity } },
-            { $inc: { stock: -it.quantity } },
-            { new: true, session }
-          );
-          if (!updated) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(400).json({
-              success: false,
-              message: `Insufficient stock to change status for product ${it.productId}`,
-            });
+        // If transitioning from cancelled -> non-cancelled (e.g., re-confirm), ensure stock available and reserve again
+        if (order.status === 'cancelled' && status !== 'cancelled') {
+          // verify availability and decrement atomically
+          for (const it of order.items) {
+            const updated = await Product.findOneAndUpdate(
+              { _id: it.productId, stock: { $gte: it.quantity } },
+              { $inc: { stock: -it.quantity } },
+              { new: true, session }
+            );
+            if (!updated) {
+              await session.abortTransaction();
+              session.endSession();
+              return res.status(400).json({
+                success: false,
+                message: `Insufficient stock to change status for product ${it.productId}`,
+              });
+            }
+            updated.inStock = !!updated.stock && updated.stock > 0;
+            await updated.save({ session });
           }
-          updated.inStock = !!updated.stock && updated.stock > 0;
-          await updated.save({ session });
         }
-      }
 
       order.status = status;
       await order.save({ session });
