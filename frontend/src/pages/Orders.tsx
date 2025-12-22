@@ -868,7 +868,7 @@ export default function Orders() {
                               <p className="font-medium text-gray-900">{product.name}</p>
                               <p className="text-sm text-gray-500">₹{product.price} each</p>
                             </div>
-                              <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3">
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"

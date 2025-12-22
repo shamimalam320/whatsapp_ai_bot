@@ -102,7 +102,8 @@ export const getDashboard = async (req: Request, res: Response) => {
       .filter((o: any) => o.status === 'completed')
       .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
 
-    const averageOrderValue = completedOrders > 0 ? totalRevenue / completedOrders : 0;
+    const completedOrdersInRange = ordersInRange.filter((o: any) => o.status === 'completed');
+    const averageOrderValue = completedOrdersInRange.length > 0 ? totalRevenue / completedOrdersInRange.length : 0;
 
     // Get popular products from orders
     const productPopularity: Record<string, { name: string; count: number }> = {};
