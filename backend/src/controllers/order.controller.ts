@@ -323,6 +323,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     // We'll attempt the transactional status update with a small retry loop to handle transient write conflicts
     let attempt = 0;
     const maxAttempts = 3;
+    let lastErr: any = null;
     while (attempt < maxAttempts) {
       const session = await mongoose.startSession();
       session.startTransaction();
