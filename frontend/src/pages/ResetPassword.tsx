@@ -1,5 +1,6 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { fetchJson } from '../api/index';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -41,16 +42,7 @@ export default function ResetPassword() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/reset-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token, password }),
-      });
-
-      const data = await response.json();
-
+      const data = await fetchJson('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
       if (data.success) {
         setMessage('Password reset successful! Redirecting to login...');
         setTimeout(() => navigate('/login'), 2000);

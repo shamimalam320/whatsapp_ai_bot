@@ -3,7 +3,7 @@ import { getPincodeDetails } from '../api/locations';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuthStore } from '../store/authStore';
-import { createOrder as createOrderApi } from '../api/orders';
+import { createOrder as createOrderApi, getOrders as getOrdersApi, updateOrderStatus as updateOrderStatusApi } from '../api/orders';
 import { getProducts } from '../api/products';
 
 interface OrderItem {
@@ -90,48 +90,27 @@ export default function Orders() {
   const [pincodeLoading, setPincodeLoading] = useState(false);
 
   const getToken = () => localStorage.getItem('token');
-
-  const handleApiError = (error: any) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      useAuthStore.getState().logout();
-      navigate('/login');
-    }
-  };
+  // Authentication and error handling are handled inline where needed.
 
   const fetchOrders = async () => {
     try {
-      const authToken = getToken();
-      if (!authToken) {
-        navigate('/login');
-        return;
+      const res = await getOrdersApi({ status: statusFilter === 'all' ? undefined : statusFilter });
+      if (res?.success && res.data?.orders) {
+        setOrders(res.data.orders);
+      } else {
+        setOrders([]);
       }
-
-      const params = new URLSearchParams();
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-
-      const response = await fetch(
-        `http://localhost:5000/api/orders?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        handleApiError({ response });
-        throw new Error('Failed to fetch orders');
-      }
-
-      const result = await response.json();
-      setOrders(result.data.orders);
       // Clear selection after fetching new data to avoid stale IDs
       setSelectedOrders([]);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
+      if (error.message === 'unauthorized') {
+        // login flow
+        localStorage.removeItem('token');
+        useAuthStore.getState().logout();
+        navigate('/login');
+        return;
+      }
       alert(error.message || 'Failed to load orders');
     }
   };
@@ -145,27 +124,15 @@ export default function Orders() {
         return;
       }
 
-      const response = await fetch(
-        `http://localhost:5000/api/orders/${orderId}/status`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ status: newStatus }),
+      const res = await updateOrderStatusApi(orderId, { status: newStatus as any });
+      if (res?.success) {
+        alert('Order status updated successfully!');
+        fetchOrders();
+        if (selectedOrder?._id === orderId) {
+          setSelectedOrder({ ...selectedOrder, status: newStatus as any });
         }
-      );
-
-      if (!response.ok) {
-        handleApiError({ response });
-        throw new Error('Failed to update status');
-      }
-
-      alert('Order status updated successfully!');
-      fetchOrders();
-      if (selectedOrder?._id === orderId) {
-        setSelectedOrder({ ...selectedOrder, status: newStatus as any });
+      } else {
+        throw new Error(res.message || 'Failed to update status');
       }
     } catch (error: any) {
       console.error('Error updating status:', error);
@@ -194,15 +161,7 @@ export default function Orders() {
     try {
       const authToken = getToken();
       if (!authToken) { navigate('/login'); return; }
-      await Promise.all(
-        selectedOrders.map((id) =>
-          fetch(`http://localhost:5000/api/orders/${id}/status`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-            body: JSON.stringify({ status: newStatus }),
-          })
-        )
-      );
+      await Promise.all(selectedOrders.map((id) => updateOrderStatusApi(id, { status: newStatus as any })));
       setSelectedOrders([]);
       fetchOrders();
     } catch (err) {
