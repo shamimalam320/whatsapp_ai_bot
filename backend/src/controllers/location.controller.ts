@@ -70,8 +70,31 @@ export async function getPincode(req: Request, res: Response) {
     await redis.set(cacheKey, JSON.stringify(envelope), 'EX', 60 * 60 * 24 * 7);
 
     return res.json(envelope);
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Lookup failed' });
+  } catch (err: any) {
+    if (axios.isAxiosError(err)) {
+      const upstreamStatus = err.response?.status;
+      console.error(
+        `Pincode lookup failed for ${pincode}. Upstream status: ${upstreamStatus ?? 'N/A'}.`,
+        err.message
+      );
+      if (upstreamStatus && upstreamStatus >= 500) {
+        return res
+          .status(502)
+          .json({
+            success: false,
+            message: 'Unable to fetch pincode details from external service. Please try again later.',
+          });
+      }
+    } else {
+      console.error(`Pincode lookup failed for ${pincode}.`, err);
+    }
+
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: 'Unable to fetch pincode details. Please try again later.',
+      });
   }
 }
 

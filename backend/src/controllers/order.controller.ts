@@ -323,7 +323,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     // We'll attempt the transactional status update with a small retry loop to handle transient write conflicts
     let attempt = 0;
     const maxAttempts = 3;
-    let lastErr: any = null;
     while (attempt < maxAttempts) {
       const session = await mongoose.startSession();
       session.startTransaction();
@@ -372,14 +371,13 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
 
       await session.commitTransaction();
       session.endSession();
-      lastErr = null;
       break; // success
-      } catch (err: any) {
+            } catch (err: any) {
         lastErr = err;
         try { if (session && typeof session.inTransaction === 'function' && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
         try { session.endSession(); } catch (e) {}
         // If this is a write-conflict, try again; otherwise rethrow
-        const isWriteConflict = /writeconflict/i.test(String(err?.message || '')) || err?.code === 112;
+        const isWriteConflict = err?.code === 112;
         attempt++;
         if (!isWriteConflict || attempt >= maxAttempts) {
           throw err;
