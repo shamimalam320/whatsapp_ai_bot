@@ -338,9 +338,23 @@ export const updateProduct = async (req: Request, res: Response) => {
         // If img is full URL, pick filename
         let filename = img;
         try { const u = new URL(img); filename = path.basename(u.pathname); } catch (e) {}
-        // prevent path traversal and ensure file is within uploads
-        if (filename.includes('..') || filename.includes('/')) continue;
-        const filePath = path.join(uploadsDir, filename);
+        // Decode and sanitize filename to prevent path traversal and ensure file is within uploads
+        let decodedFilename: string;
+        try {
+          decodedFilename = decodeURIComponent(filename);
+        } catch {
+          // If decoding fails, skip this entry
+          continue;
+        }
+        // Disallow any path separators or traversal sequences in the filename
+        if (!decodedFilename || decodedFilename.includes('..') || decodedFilename.includes('/') || decodedFilename.includes('\\')) {
+          continue;
+        }
+        const filePath = path.resolve(uploadsDir, decodedFilename);
+        // Ensure the resolved path is still within the uploads directory
+        if (!filePath.startsWith(uploadsDir + path.sep)) {
+          continue;
+        }
         if (fs.existsSync(filePath)) {
           await fs.promises.unlink(filePath);
         }
