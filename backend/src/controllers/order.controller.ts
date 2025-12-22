@@ -364,7 +364,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
         try { session.endSession(); } catch (e) {}
         // If this is a write-conflict, try again; otherwise rethrow
-        const isWriteConflict = /writeconflict/i.test(String(err?.message || '')) || err?.code === 112;
+        const isWriteConflict = err?.code === 112;
         attempt++;
         if (!isWriteConflict || attempt >= maxAttempts) {
           throw err;
