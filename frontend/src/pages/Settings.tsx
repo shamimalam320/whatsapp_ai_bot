@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import * as templatesApi from '../api/templates';
+import { fetchJson } from '../api/index';
 
 interface BusinessProfile {
   _id: string;
@@ -35,14 +36,7 @@ export default function Settings() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
-  const getToken = () => localStorage.getItem('token');
-
-  const handleApiError = (error: any) => {
-    if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-      logout();
-      navigate('/login');
-    }
-  };
+  // Auth and error handling performed inline where needed
 
   useEffect(() => {
     fetchProfile();
@@ -60,25 +54,8 @@ export default function Settings() {
 
   const fetchProfile = async () => {
     try {
-      const token = getToken();
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
-      const response = await fetch('http://localhost:5000/api/business/profile', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await fetchJson('/api/business/profile');
       console.log('Profile API response:', data);
-      
       if (data.success) {
         setProfile(data.data);
         setWhatsappNumber(data.data.whatsappNumber || '');
@@ -90,7 +67,13 @@ export default function Settings() {
       }
     } catch (error: any) {
       console.error('Error fetching profile:', error);
-      handleApiError(error);
+      if (error.message === 'unauthorized') {
+        logout();
+        navigate('/login');
+        return;
+      }
+      // If unauthorized, already handled above; otherwise log and surface a message
+      console.error('API error while fetching profile:', error);
       setError('Failed to load profile');
     } finally {
       setLoading(false);
@@ -99,15 +82,12 @@ export default function Settings() {
 
   const fetchAiConfig = async () => {
     try {
-      const token = getToken();
-      if (!token) return;
-
-      const response = await fetch('http://localhost:5000/api/business/ai-config', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data.success) setAiConfig(data.data);
+      try {
+        const data = await fetchJson('/api/business/ai-config');
+        if (data.success) setAiConfig(data.data);
+      } catch (err) {
+        // ignore
+      }
       // fetch ai settings if available
       try {
         const { getAiSettings } = await import('../api/aiSettings');
@@ -128,32 +108,21 @@ export default function Settings() {
     setSaving(true);
 
     try {
-      const token = getToken();
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
-      const response = await fetch('http://localhost:5000/api/business/whatsapp/connect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ whatsappNumber }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage('✅ WhatsApp connected successfully! You can now receive messages.');
-        setProfile(prev => prev ? { ...prev, whatsappNumber: data.data.whatsappNumber } : null);
-      } else {
-        setError(data.message || 'Failed to connect WhatsApp');
+      try {
+        const data = await fetchJson('/api/business/whatsapp/connect', { method: 'POST', body: JSON.stringify({ whatsappNumber }) });
+        if (data.success) {
+          setMessage('✅ WhatsApp connected successfully! You can now receive messages.');
+          setProfile(prev => prev ? { ...prev, whatsappNumber: data.data.whatsappNumber } : null);
+        } else {
+          setError(data.message || 'Failed to connect WhatsApp');
+        }
+      } catch (error: any) {
+        if (error.message === 'unauthorized') { logout(); navigate('/login'); return; }
+        throw error;
       }
     } catch (error: any) {
       console.error('Error connecting WhatsApp:', error);
-      handleApiError(error);
+      if (error?.message === 'unauthorized') { logout(); navigate('/login'); return; }
       setError('Failed to connect WhatsApp');
     } finally {
       setSaving(false);
@@ -167,34 +136,21 @@ export default function Settings() {
     setSaving(true);
 
     try {
-      const token = getToken();
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
-      const response = await fetch('http://localhost:5000/api/business/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(profile),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage('✅ Profile updated successfully!');
-        // Re-fetch profile from server to ensure we show the canonical saved data
-        // (keeps UI consistent if backend normalizes or stores address differently)
-        fetchProfile();
-      } else {
-        setError(data.message || 'Failed to update profile');
+      try {
+        const data = await fetchJson('/api/business/profile', { method: 'PUT', body: JSON.stringify(profile) });
+        if (data.success) {
+          setMessage('✅ Profile updated successfully!');
+          fetchProfile();
+        } else {
+          setError(data.message || 'Failed to update profile');
+        }
+      } catch (error: any) {
+        if (error.message === 'unauthorized') { logout(); navigate('/login'); return; }
+        throw error;
       }
     } catch (error: any) {
       console.error('Error updating profile:', error);
-      handleApiError(error);
+      if (error?.message === 'unauthorized') { logout(); navigate('/login'); return; }
       setError('Failed to update profile');
     } finally {
       setSaving(false);
@@ -370,15 +326,9 @@ export default function Settings() {
             setSaving(true);
             setMessage(''); setError('');
             try {
-              const token = getToken();
-              const res = await fetch('http://localhost:5000/api/business/ai-config', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify(aiConfig),
-              });
-              const data = await res.json();
-              if (data.success) { setAiConfig(data.data); setMessage('✅ AI settings saved'); }
-              else setError(data.message || 'Failed to save AI settings');
+              const result = await fetchJson('/api/business/ai-config', { method: 'PUT', body: JSON.stringify(aiConfig) });
+              if (result?.success) { setAiConfig(result.data); setMessage('✅ AI settings saved'); }
+              else setError(result?.message || 'Failed to save AI settings');
             } catch (err: any) { console.error(err); setError('Failed to save AI settings'); }
             finally { setSaving(false); }
           }} className="space-y-4">
@@ -474,15 +424,10 @@ export default function Settings() {
               <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" onClick={async () => {
                 setSaving(true); setMessage(''); setError('');
                 try {
-                  const token = getToken();
-                  if (!token) { navigate('/login'); return; }
-                  const res = await fetch('http://localhost:5000/api/business/apply-template', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ templateId: selectedTemplate })
-                  });
-                  const data = await res.json();
-                  if (data.success) { setMessage('✅ Template applied successfully'); fetchProfile(); }
-                  else setError(data.message || 'Failed to apply template');
-                } catch (err: any) { console.error(err); setError('Failed to apply template'); }
+                  const res = await fetchJson('/api/business/apply-template', { method: 'POST', body: JSON.stringify({ templateId: selectedTemplate }) });
+                  if (res.success) { setMessage('✅ Template applied successfully'); fetchProfile(); }
+                  else setError(res.message || 'Failed to apply template');
+                } catch (err: any) { if (err.message === 'unauthorized') { logout(); navigate('/login'); return; } console.error(err); setError('Failed to apply template'); }
                 finally { setSaving(false); }
               }}>Apply Template</button>
             </div>

@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+import { fetchJson } from './index';
 
 interface RegisterData {
   email: string;
@@ -48,48 +48,18 @@ interface UserResponse {
 }
 
 class AuthAPI {
-  private getHeaders(includeAuth = false): HeadersInit {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
-
-    if (includeAuth) {
-      const token = localStorage.getItem('token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    }
-
-    return headers;
-  }
+  // headers are handled by fetchJson; remove unused helper
 
   async register(data: RegisterData): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-
-    return response.json();
+    return fetchJson('/auth/register', { method: 'POST', body: JSON.stringify(data) });
   }
 
   async login(data: LoginData): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-
-    return response.json();
+    return fetchJson('/auth/login', { method: 'POST', body: JSON.stringify(data) });
   }
 
   async getCurrentUser(): Promise<UserResponse> {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      method: 'GET',
-      headers: this.getHeaders(true),
-    });
-
-    return response.json();
+    return fetchJson('/auth/me');
   }
 
   saveToken(token: string): void {

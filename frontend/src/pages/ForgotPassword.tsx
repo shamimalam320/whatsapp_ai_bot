@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { fetchJson } from '../api/index';
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
@@ -16,16 +17,7 @@ export default function ForgotPassword() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/forgot-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
+      const data = await fetchJson('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
       if (data.success) {
         setMessage(data.message || 'Password reset instructions have been sent to your email address.');
         setEmail('');
@@ -33,6 +25,7 @@ export default function ForgotPassword() {
         setError(data.message || 'Failed to send reset email. Please try again.');
       }
     } catch (err: any) {
+      if (err.message === 'unauthorized') { setError('Session expired. Please login again.'); return; }
       setError('Failed to connect to server. Please try again.');
     } finally {
       setIsSubmitting(false);
