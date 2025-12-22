@@ -76,7 +76,7 @@ async function run() {
     });
 
     if (changed) {
-      console.log(`Will update ${p._id} - new images: ${JSON.stringify(images)}`);
+      console.log(`Will update ${p._id} - new images: ${JSON.stringify(finalImages)}`);
       if (!dry) {
         p.images = finalImages;
         await p.save();
