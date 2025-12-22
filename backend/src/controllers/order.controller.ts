@@ -264,7 +264,7 @@ Thank you for your order! 🙏`;
     });
   } catch (error: any) {
     try {
-      if (typeof session !== 'undefined' && session.inTransaction && session.inTransaction()) {
+      if (typeof session !== 'undefined' && session.inTransaction()) {
         await session.abortTransaction();
         session.endSession();
       }
