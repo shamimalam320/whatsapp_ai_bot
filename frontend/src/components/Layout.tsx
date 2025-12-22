@@ -83,7 +83,6 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Orders', href: '/orders', icon: '🛒' },
     { name: 'Analytics', href: '/analytics', icon: '📈' },
     { name: 'FAQs', href: '/faqs', icon: '❓' },
-    { name: 'Settings', href: '/settings', icon: '⚙️' },
   ];
 
   return (
@@ -150,16 +149,28 @@ export default function Layout({ children }: LayoutProps) {
                       onClick={() => setShowUserMenu(false)}
                     />
                     <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 z-20">
-                      <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                        <div className="font-medium">{user?.name}</div>
-                        <div className="text-xs text-gray-500">{user?.email}</div>
-                      </div>
-                      <button
-                        onClick={handleLogout}
-                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-                      >
-                        🚪 Logout
-                      </button>
+                        <div className="px-3 py-2 text-sm text-gray-700 border-b">
+                          <div className="font-medium text-sm">{user?.name}</div>
+                          <div className="text-xs text-gray-500">{user?.email}</div>
+                        </div>
+
+                        <div className="px-1 py-1">
+                          <button
+                            onClick={() => { setShowUserMenu(false); navigate('/settings'); }}
+                            className="block w-full text-left px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 rounded"
+                          >
+                            <span className="mr-2">⚙️</span> Settings
+                          </button>
+
+                          <div className="my-1 border-t" />
+
+                          <button
+                            onClick={handleLogout}
+                            className="block w-full text-left px-3 py-1 text-xs text-red-600 hover:bg-gray-50 rounded"
+                          >
+                            <span className="mr-2">🚪</span> Logout
+                          </button>
+                        </div>
                     </div>
                   </>
                 )}

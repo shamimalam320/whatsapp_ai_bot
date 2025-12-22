@@ -8,6 +8,10 @@ interface Product {
   _id: string;
   name: string;
   nameHindi?: string;
+  size?: string;
+  color?: string;
+  weight?: number;
+  weightUnit?: 'gram' | 'kg';
   description?: string;
   price: number;
   category: string;
@@ -30,16 +34,94 @@ export default function Products() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingOriginalImages, setEditingOriginalImages] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     nameHindi: '',
+    size: '',
+    color: '',
+    weight: '',
+    weightUnit: 'gram' as 'gram' | 'kg',
     description: '',
     price: '',
     category: '',
     stock: '',
     images: [] as string[],
   });
+
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+  const isLikelyImage = (s?: string) => {
+    if (!s) return false;
+    if (/^https?:\/\//i.test(s)) return true;
+    if (/^\/uploads|^uploads\//i.test(s)) return true;
+    // file name or path with common image extension
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+    return false;
+  };
+
+  const resolveImageSrc = (src?: string) => {
+    if (!src) return '';
+    if (!isLikelyImage(src)) return '';
+    if (!src) return '';
+
+    // If absolute URL, but points to a different host (e.g., Vite dev host),
+    // rewrite to use API_BASE when the path looks like /uploads/...
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      try {
+        const u = new URL(src);
+        const apiOrigin = new URL(API_BASE).origin;
+        if (u.pathname.startsWith('/uploads') && u.origin !== apiOrigin) {
+          return `${API_BASE}${u.pathname}`;
+        }
+        return src;
+      } catch (e) {
+        return src; // fall back if malformed
+      }
+    }
+
+    // If the path already includes uploads (with or without leading slash),
+    // ensure we prefix with API_BASE and keep a single leading slash.
+    if (src.startsWith('/uploads') || src.startsWith('uploads/')) {
+      const pathOnly = src.startsWith('/') ? src : '/' + src;
+      return `${API_BASE}${pathOnly}`;
+    }
+
+    // If it's just a filename (e.g. 'abc.jpg'), assume it's stored in uploads folder
+    if (!src.includes('/')) {
+      return `${API_BASE}/uploads/${src}`;
+    }
+
+    // As a fallback, prefix API_BASE so absolute resolution happens
+    return `${API_BASE}${src.startsWith('/') ? '' : '/'}${src}`;
+  };
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, originalSrc?: string) => {
+    const img = e.currentTarget as HTMLImageElement & { dataset: any };
+    try {
+      // Try 1: if original is relative (/uploads/...), prefix API_BASE
+      if (!img.dataset.tried && originalSrc) {
+        img.dataset.tried = '1';
+        const fallback = `${API_BASE}${originalSrc.startsWith('/') ? '' : '/'}${originalSrc}`;
+        if (fallback !== img.src) { img.src = fallback; return; }
+      }
+
+      // Try 2: use basename in uploads folder
+      if (!img.dataset.tried2 && originalSrc) {
+        img.dataset.tried2 = '1';
+        const parts = originalSrc.split('/');
+        const basename = parts[parts.length - 1];
+        const fallback2 = `${API_BASE}/uploads/${basename}`;
+        if (fallback2 !== img.src) { img.src = fallback2; return; }
+      }
+
+      // Final: hide the broken image to avoid broken icon
+      img.style.display = 'none';
+    } catch (err) {
+      img.style.display = 'none';
+    }
+  };
 
   // API client is used (token handled centrally)
 
@@ -91,11 +173,19 @@ export default function Products() {
           ...formData,
           price: Number(formData.price),
           stock: Number(formData.stock) || 0,
+          weight: formData.weight ? Number(formData.weight) : undefined,
+          size: formData.size || undefined,
+          color: formData.color || undefined,
+          weightUnit: formData.weight ? formData.weightUnit : undefined,
         };
 
         let data;
         if (editingProduct) {
-          data = await productApi.updateProduct(editingProduct._id, payload);
+            // detect images deleted during edit so backend can remove files
+            const orig = editingOriginalImages || [];
+            const keep = payload.images || [];
+            const deletedImages = orig.filter(i => !keep.includes(i));
+            data = await productApi.updateProduct(editingProduct._id, { ...payload, deletedImages });
         } else {
           data = await productApi.createProduct(payload as any);
         }
@@ -106,6 +196,10 @@ export default function Products() {
           setFormData({
             name: '',
             nameHindi: '',
+            size: '',
+            color: '',
+            weight: '',
+            weightUnit: 'gram',
             description: '',
             price: '',
             category: '',
@@ -139,12 +233,17 @@ export default function Products() {
     setFormData({
       name: product.name,
       nameHindi: product.nameHindi || '',
+      size: product.size || '',
+      color: product.color || '',
+      weight: product.weight?.toString() || '',
+      weightUnit: product.weightUnit || 'gram',
       description: product.description || '',
       price: product.price.toString(),
       category: product.category,
       stock: product.stock?.toString() || '',
       images: product.images || [],
     });
+    setEditingOriginalImages(product.images || []);
     setShowModal(true);
   };
 
@@ -240,6 +339,10 @@ export default function Products() {
                 setFormData({
                   name: '',
                   nameHindi: '',
+                  size: '',
+                  color: '',
+                  weight: '',
+                  weightUnit: 'gram',
                   description: '',
                   price: '',
                   category: '',
@@ -317,10 +420,10 @@ export default function Products() {
                       <td className="px-6 py-4">
                         <div>
                               <div className="flex items-center gap-3">
-                                {product.images && product.images.length > 0 ? (
-                                  <img src={product.images[0]} alt={product.name} className="w-10 h-10 object-cover rounded" />
-                                ) : (
-                                  <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400">No</div>
+                                        {product.images && product.images.length > 0 && resolveImageSrc(product.images[0]) ? (
+                                                  <img src={resolveImageSrc(product.images[0])} alt={product.name} className="w-14 h-14 object-cover rounded-lg shadow-sm" onError={(e) => handleImageError(e, product.images?.[0])} />
+                                        ) : (
+                                          <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-400">No</div>
                                 )}
                                 <div>
                                   <div className="text-sm font-medium text-gray-900">{product.name}</div>
@@ -337,7 +440,16 @@ export default function Products() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        ₹{product.price.toLocaleString()}
+                        <div>
+                          <div>₹{product.price.toLocaleString()}</div>
+                          {(product.size || product.color || product.weight) && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {product.size && <span className="mr-2">Size: {product.size}</span>}
+                              {product.color && <span className="mr-2">Color: {product.color}</span>}
+                              {product.weight && <span>Weight: {product.weight}{product.weightUnit}</span>}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {product.stock || 0}
@@ -388,10 +500,10 @@ export default function Products() {
               {editingProduct ? 'Edit Product' : 'Add New Product'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name (English) *
+                    Product Name *
                   </label>
                   <input
                     type="text"
@@ -400,18 +512,6 @@ export default function Products() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="e.g., Smart Watch"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name (Hindi)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.nameHindi}
-                    onChange={(e) => setFormData({ ...formData, nameHindi: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="e.g., स्मार्ट वॉच"
                   />
                 </div>
               </div>
@@ -471,31 +571,93 @@ export default function Products() {
                     placeholder="10"
                   />
                 </div>
+
+                {/* Product Attributes: Size / Color / Weight */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Images</label>
-                  <input type="file" accept="image/*" multiple onChange={async (e) => {
-                    const files = e.target.files;
-                    if (!files) return;
-                    const arr = Array.from(files);
-                    const uploaded: string[] = [];
-                    for (const f of arr) {
-                      try {
-                        const { uploadImage } = await import('../api/uploads');
-                        const r: any = await uploadImage(f);
-                        if (r.success && r.data?.url) uploaded.push(r.data.url);
-                      } catch (err) { console.error('Image upload failed', err); }
-                    }
-                    setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...uploaded] }));
-                  }} />
-                  {formData.images && formData.images.length > 0 && (
-                    <div className="mt-2 flex gap-2">
-                      {formData.images.map((src, idx) => (
-                        <img key={idx} src={src} alt="product" className="w-12 h-12 object-cover rounded" />
-                      ))}
-                    </div>
-                  )}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+                  <select
+                    value={formData.size}
+                    onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Size</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="XXL">XXL</option>
+                    <option value="Free Size">Free Size</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <input
+                    type="text"
+                    value={formData.color}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="e.g., Red, Blue"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.weight}
+                      onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                      className="w-2/3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="100"
+                    />
+                    <select
+                      value={formData.weightUnit}
+                      onChange={(e) => setFormData({ ...formData, weightUnit: e.target.value as 'gram' | 'kg' })}
+                      className="w-1/3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="gram">gram</option>
+                      <option value="kg">kg</option>
+                    </select>
+                  </div>
                 </div>
               </div>
+
+              {/* Move Images to the bottom of the modal so other product fields are primary */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Images</label>
+                <input type="file" accept="image/*" multiple onChange={async (e) => {
+                  const files = e.target.files;
+                  if (!files) return;
+                  const arr = Array.from(files);
+                  const uploaded: string[] = [];
+                  for (const f of arr) {
+                    try {
+                      const { uploadImage } = await import('../api/uploads');
+                      const r: any = await uploadImage(f);
+                      if (r.success && r.data?.url) uploaded.push(r.data.url);
+                    } catch (err) { console.error('Image upload failed', err); }
+                  }
+                  setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...uploaded] }));
+                }} />
+                {formData.images && formData.images.length > 0 && (
+                  <div className="mt-3 flex gap-3">
+                    {formData.images.filter(s => resolveImageSrc(s)).map((src, idx) => (
+                      <div key={idx} className="relative">
+                        <img src={resolveImageSrc(src)} alt="product" className="w-20 h-20 object-cover rounded-lg shadow-sm" onError={(e) => handleImageError(e, src ?? undefined)} />
+                        <button type="button" onClick={() => {
+                          setFormData(prev => ({ ...prev, images: prev.images?.filter(x => x !== src) || [] }));
+                        }} className="absolute -top-2 -right-2 bg-white text-red-600 rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* (attributes moved earlier) - removed duplicate block */}
 
               <div className="flex justify-end space-x-3 mt-6">
                 <button
@@ -523,7 +685,8 @@ export default function Products() {
           <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-6">Bulk Upload Products (CSV)</h2>
             <div className="text-sm text-gray-700 mb-4">
-              Upload a CSV with headers: name, nameHindi, description, price, category, stock, images (semicolon separated), variants (name:price; semicolon separated)
+              Upload a CSV with headers: name, nameHindi, description, price, category, stock, size, color, weight, weightUnit (gram/kg), images (semicolon separated).<br />
+              <span className="text-red-600 font-semibold">Note: The 'variants' field is no longer supported and should be removed from any existing CSV templates.</span>
             </div>
             <input type="file" accept="text/csv,text/plain" onChange={(e) => handleBulkUploadFile(e.target.files?.[0] || null)} disabled={bulkUploading} />
             <div className="flex justify-end space-x-3 mt-6">

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Order from '../models/Order';
 import Product from '../models/Product';
 import Chat from '../models/Chat';
@@ -99,8 +100,11 @@ export const getOrder = async (req: Request, res: Response) => {
 // @desc    Create order manually from dashboard
 // @access  Private
 export const createOrder = async (req: Request, res: Response) => {
+  // session and createdOrder declared here so outer catch can access them
+  let session: any = undefined;
+  let createdOrder: any = undefined;
   try {
-    const { customerPhone, customerName, items, deliveryAddress, notes } = req.body;
+    const { customerPhone, customerName, items, deliveryAddress, delivery, notes } = req.body;
     const businessId = req.user?.businessId;
 
     if (!businessId) {
@@ -148,6 +152,7 @@ export const createOrder = async (req: Request, res: Response) => {
         });
       }
 
+      // Verify product belongs to business
       if (product.businessId.toString() !== businessId.toString()) {
         return res.status(403).json({
           success: false,
@@ -156,6 +161,16 @@ export const createOrder = async (req: Request, res: Response) => {
       }
 
       const quantity = item.quantity || 1;
+
+      // Check stock availability
+      const available = typeof product.stock === 'number' ? product.stock : 0;
+      if (quantity > available) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for product ${product.name}. Available: ${available}, requested: ${quantity}`,
+        });
+      }
+
       const itemTotal = product.price * quantity;
       totalAmount += itemTotal;
 
@@ -167,44 +182,95 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // Create order
-    const order = await Order.create({
-      businessId,
-      chatId: chat._id,
-      customerPhone,
-      customerName: customerName || chat.customerName,
-      items: orderItems,
-      totalAmount,
-      status: 'pending',
-      deliveryAddress,
-      notes,
-    });
+    // Use an ACID transaction to atomically reserve stock and create order
+    session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      // Reserve (decrement) stock for all products using atomic checks
+      for (const it of orderItems) {
+        const updated = await Product.findOneAndUpdate(
+          { _id: it.productId, stock: { $gte: it.quantity } },
+          { $inc: { stock: -it.quantity } },
+          { new: true, session }
+        );
+        if (!updated) {
+          // Not enough stock for this product, abort
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for product ${it.productName}.`,
+          });
+        }
+        // Update inStock flag in transaction
+        updated.inStock = !!updated.stock && updated.stock > 0;
+        await updated.save({ session });
+      }
+
+      // Create order inside transaction
+      const order = await Order.create(
+        [
+          {
+            businessId,
+            chatId: chat._id,
+            customerPhone,
+            customerName: customerName || chat.customerName,
+            items: orderItems,
+            totalAmount,
+            status: 'pending',
+            deliveryAddress,
+            delivery: delivery || undefined,
+            notes,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      // order returned from create() is an array because we used create([...])
+      createdOrder = order[0];
+    } catch (err) {
+      try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+      try { session.endSession(); } catch (e) {}
+      throw err;
+    }
 
     // Send confirmation message
     const orderSummary = orderItems
       .map((item) => `${item.quantity}x ${item.productName} - ₹${item.price}`)
       .join('\n');
 
-    const confirmationMessage = `✅ Order Confirmed! #${order._id.toString().slice(-6).toUpperCase()}
+    const confirmationMessage = `✅ Order Confirmed! #${createdOrder._id.toString().slice(-6).toUpperCase()}
 
 ${orderSummary}
 
 Total: ₹${totalAmount}
 ${deliveryAddress ? `\nDelivery Address: ${deliveryAddress}` : ''}
+${delivery ? `\n(Parsed: ${[delivery.addressLine, delivery.locality, delivery.city, delivery.state, delivery.pincode].filter(Boolean).join(', ')})` : ''}
 
 We'll notify you when your order is ready for delivery.
 Thank you for your order! 🙏`;
 
     await whatsappService.sendMessage(customerPhone, confirmationMessage);
 
-    logger.info(`Order created: ${order._id}`);
+    logger.info(`Order created: ${createdOrder._id}`);
 
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
-      data: order,
+      data: createdOrder,
     });
   } catch (error: any) {
+    try {
+      if (typeof session !== 'undefined' && session.inTransaction()) {
+        await session.abortTransaction();
+        session.endSession();
+      }
+    } catch (e) {
+      // ignore session cleanup errors
+    }
     logger.error('Create order error:', error);
     res.status(500).json({
       success: false,
@@ -245,8 +311,68 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     }
 
     const oldStatus = order.status;
-    order.status = status;
-    await order.save();
+
+    // Use a transaction when modifying stocks during status changes
+    // We'll attempt the transactional status update with a small retry loop to handle transient write conflicts
+    let attempt = 0;
+    const maxAttempts = 3;
+    while (attempt < maxAttempts) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        // If transitioning from non-cancelled -> cancelled, restore stock
+        if (status === 'cancelled' && order.status !== 'cancelled') {
+          for (const it of order.items) {
+            await Product.findByIdAndUpdate(it.productId, { $inc: { stock: it.quantity } }, { session });
+            const p = await Product.findById(it.productId).session(session);
+            if (p) {
+              p.inStock = !!p.stock && p.stock > 0;
+              await p.save({ session });
+            }
+          }
+        }
+
+        // If transitioning from cancelled -> non-cancelled (e.g., re-confirm), ensure stock available and reserve again
+        if (order.status === 'cancelled' && status !== 'cancelled') {
+          // verify availability and decrement atomically
+          for (const it of order.items) {
+            const updated = await Product.findOneAndUpdate(
+              { _id: it.productId, stock: { $gte: it.quantity } },
+              { $inc: { stock: -it.quantity } },
+              { new: true, session }
+            );
+            if (!updated) {
+              await session.abortTransaction();
+              session.endSession();
+              return res.status(400).json({
+                success: false,
+                message: `Insufficient stock to change status for product ${it.productId}`,
+              });
+            }
+            updated.inStock = !!updated.stock && updated.stock > 0;
+            await updated.save({ session });
+          }
+        }
+
+      order.status = status;
+      await order.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+      break; // success
+      } catch (err: any) {
+        try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+        try { session.endSession(); } catch (e) {}
+        // If this is a write-conflict, try again; otherwise rethrow
+        const isWriteConflict = err?.code === 112;
+        attempt++;
+        if (!isWriteConflict || attempt >= maxAttempts) {
+          throw err;
+        }
+        // small backoff
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+      }
+    }
 
     // Send status update message
     let statusMessage = '';
@@ -268,7 +394,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
 
     logger.info(`Order ${order._id} status updated to ${status}`);
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: 'Order status updated',
       data: order,

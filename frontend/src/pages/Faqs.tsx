@@ -12,17 +12,29 @@ export default function Faqs() {
   const [answerEn, setAnswerEn] = useState('');
   // FAQ category currently fixed to 'general' for MVP
   const [category] = useState('general');
+  // 'all' = show everyone, 'published' = only active, 'unpublished' = only inactive
+  // default to 'published' as requested
+  const [filter, setFilter] = useState<'all' | 'published' | 'unpublished'>('published');
+  const [selected, setSelected] = useState<string[]>([]);
 
   const { user } = useAuthStore();
 
-  useEffect(() => { fetchList(); }, [user?.business?.id]);
+  useEffect(() => { fetchList(); }, [user?.business?.id, filter]);
 
   async function fetchList() {
     setLoading(true);
     try {
       const businessId = user?.business?.id;
-      const data = await faqsApi.listFaqs({ onlyActive: true, businessId });
-      if (data.success) setFaqs(data.data || []);
+      const params: any = { businessId, category };
+      if (filter === 'published') params.onlyActive = true;
+      else if (filter === 'unpublished') params.onlyActive = false;
+
+      const data = await faqsApi.listFaqs(params);
+      if (data.success) {
+        setFaqs(data.data || []);
+        // Clear selection when the list changes
+        setSelected([]);
+      }
     } catch (err) { console.error(err); }
     setLoading(false);
   }
@@ -100,8 +112,8 @@ export default function Faqs() {
         <div className="bg-white rounded-lg p-6 mb-6">
           <h2 className="font-semibold mb-3">Add FAQ</h2>
           <form onSubmit={handleAdd} className="space-y-3">
-            <input className="w-full px-3 py-2 border rounded" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question (English)" required />
-            <textarea className="w-full px-3 py-2 border rounded" value={answerEn} onChange={e=>setAnswerEn(e.target.value)} placeholder="Answer (English)" rows={3} required />
+            <input className="w-full px-3 py-2 border rounded" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" required />
+            <textarea className="w-full px-3 py-2 border rounded" value={answerEn} onChange={e=>setAnswerEn(e.target.value)} placeholder="Answer" rows={3} required />
             <div className="flex justify-end">
               <button className="px-4 py-2 bg-indigo-600 text-white rounded" type="submit">Add FAQ</button>
             </div>
@@ -109,29 +121,89 @@ export default function Faqs() {
         </div>
 
         <div className="bg-white rounded-lg p-6">
-          <h2 className="font-semibold mb-3">Active FAQs</h2>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selected.length > 0 && selected.length === faqs.length}
+                onChange={(e) => {
+                  if (e.target.checked) setSelected(faqs.map(f => f._id));
+                  else setSelected([]);
+                }}
+                className="w-4 h-4"
+              />
+              <h2 className="font-semibold">FAQs</h2>
+              {selected.length > 0 && (
+                <span className="text-sm text-gray-500 ml-2">{selected.length} selected</span>
+              )}
+            </div>
+
+            {/* dropdown filter in corner */}
+            <div>
+              <select value={filter} onChange={(e) => setFilter(e.target.value as any)} className="px-3 py-1 border rounded bg-white text-sm">
+                <option value="published">Published</option>
+                <option value="all">All</option>
+                <option value="unpublished">Unpublished</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Bulk actions when multiple selected */}
+          {selected.length > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={async () => {
+                  if (!confirm(`Publish ${selected.length} selected?`)) return;
+                  try {
+                    await Promise.all(selected.map(id => faqsApi.updateFaq(id, { isActive: true })));
+                    fetchList();
+                  } catch (err) { console.error(err); alert('Bulk publish failed'); }
+                }} className="px-2 py-1 text-xs bg-green-600 text-white rounded">Publish Selected</button>
+
+              <button onClick={async () => {
+                  if (!confirm(`Unpublish ${selected.length} selected?`)) return;
+                  try {
+                    await Promise.all(selected.map(id => faqsApi.updateFaq(id, { isActive: false })));
+                    fetchList();
+                  } catch (err) { console.error(err); alert('Bulk unpublish failed'); }
+                }} className="px-2 py-1 text-xs bg-yellow-500 text-white rounded">Unpublish Selected</button>
+
+              <button onClick={async () => {
+                  if (!confirm(`Delete ${selected.length} selected? This is permanent.`)) return;
+                  try {
+                    await Promise.all(selected.map(id => faqsApi.deleteFaq(id)));
+                    fetchList();
+                  } catch (err) { console.error(err); alert('Bulk delete failed'); }
+                }} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Delete Selected</button>
+            </div>
+          )}
           {loading ? <div>Loading...</div> : (
             <ul className="space-y-3">
               {faqs.map(f => (
                 <li key={f._id} className="border p-3 rounded">
                   <div className="flex justify-between items-start gap-3">
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{f.question}</div>
-                      <div className="text-xs text-gray-600 mt-1">{f.answer?.en}</div>
+                    <div className="flex items-start gap-3 flex-1">
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(f._id)}
+                        onChange={(e) => {
+                          setSelected(prev => e.target.checked ? [...prev, f._id] : prev.filter(id => id !== f._id));
+                        }}
+                        className="w-4 h-4 mt-1"
+                      />
+                      <div>
+                        <div className="text-sm font-medium">{f.question}</div>
+                        <div className="text-xs text-gray-600 mt-1">{f.answer?.en}</div>
+                      </div>
                     </div>
                         <div className="flex-shrink-0 ml-3 flex items-start gap-2">
-                          <button onClick={() => handleEdit(f)} className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm">Edit</button>
-                          <button onClick={() => handleDelete(f._id)} className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm">Delete</button>
+                          <button onClick={() => handleEdit(f)} className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">Edit</button>
+                          <button onClick={() => handleDelete(f._id)} className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">Delete</button>
                           <button onClick={async () => {
                               try {
                                 const res = await faqsApi.updateFaq(f._id, { isActive: !f.isActive });
                                 if (res.success) {
-                                  // if toggled off (unpublished) remove from active list, otherwise update
-                                  if (!res.data.isActive) {
-                                    setFaqs(prev => prev.filter(p => p._id !== f._id));
-                                  } else {
-                                    setFaqs(prev => prev.map(p => p._id === f._id ? res.data : p));
-                                  }
+                                  // reload list for current filter (keeps UI consistent)
+                                  fetchList();
                                 } else {
                                   alert(res.message || 'Failed to toggle');
                                 }
@@ -139,7 +211,7 @@ export default function Faqs() {
                                 console.error('Toggle fail', err);
                                 alert('Failed to toggle FAQ');
                               }
-                            }} className={`px-3 py-1 rounded text-sm ${f.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
+                            }} className={`px-2 py-1 rounded text-xs ${f.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
                             {f.isActive ? 'Unpublish' : 'Publish'}
                           </button>
                         </div>

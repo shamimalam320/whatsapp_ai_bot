@@ -20,6 +20,7 @@ import aiRoutes from './routes/ai.routes';
 import templateRoutes from './routes/template.routes';
 import faqRoutes from './routes/faq.routes';
 import uploadRoutes from './routes/upload.routes';
+import locationRoutes from './routes/location.routes';
 import path from 'path';
 
 // Load environment variables
@@ -72,8 +73,27 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/locations', locationRoutes);
 
 // Serve uploaded files
+// Ensure correct Content-Type for some uncommon image extensions (e.g., .jfif)
+app.use('/uploads', (req: Request, res: Response, next) => {
+  try {
+    if (/\.jfif$/i.test(req.path)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+    }
+  } catch (e) {
+    // ignore
+  }
+  next();
+});
+// Allow uploads to be embedded cross-origin (useful in dev where frontend runs on different port)
+app.use('/uploads', (req: Request, res: Response, next) => {
+  try {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  } catch (e) {}
+  next();
+});
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // 404 handler
