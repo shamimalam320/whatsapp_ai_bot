@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import { isE164, E164_EXAMPLE } from '../utils/phone';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import * as templatesApi from '../api/templates';
@@ -23,6 +24,7 @@ export default function Settings() {
   const [error, setError] = useState('');
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<any>({
     model: '',
     temperature: 0.7,
@@ -109,6 +111,7 @@ export default function Settings() {
 
     try {
       try {
+        if (!isE164(whatsappNumber)) { setError(`WhatsApp number must be E.164 (e.g. ${E164_EXAMPLE})`); return; }
         const data = await fetchJson('/api/business/whatsapp/connect', { method: 'POST', body: JSON.stringify({ whatsappNumber }) });
         if (data.success) {
           setMessage('✅ WhatsApp connected successfully! You can now receive messages.');
@@ -122,7 +125,7 @@ export default function Settings() {
       }
     } catch (error: any) {
       console.error('Error connecting WhatsApp:', error);
-      if (error?.message === 'unauthorized') { logout(); navigate('/login'); return; }
+      // Inner catch handles unauthorized and redirects, so here just surface the error
       setError('Failed to connect WhatsApp');
     } finally {
       setSaving(false);
@@ -137,6 +140,7 @@ export default function Settings() {
 
     try {
       try {
+        if (profile?.phone && !isE164(profile.phone)) { setError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`); return; }
         const data = await fetchJson('/api/business/profile', { method: 'PUT', body: JSON.stringify(profile) });
         if (data.success) {
           setMessage('✅ Profile updated successfully!');
@@ -150,7 +154,7 @@ export default function Settings() {
       }
     } catch (error: any) {
       console.error('Error updating profile:', error);
-      if (error?.message === 'unauthorized') { logout(); navigate('/login'); return; }
+      // Inner catch handles unauthorized and redirects, so here just surface the error
       setError('Failed to update profile');
     } finally {
       setSaving(false);
@@ -284,10 +288,12 @@ export default function Settings() {
               </label>
               <input
                 type="text"
+                placeholder="+919876543210 (E.164)"
                 value={profile?.phone || ''}
-                onChange={(e) => setProfile(prev => prev ? { ...prev, phone: e.target.value } : null)}
+                onChange={(e) => { setProfile(prev => prev ? { ...prev, phone: e.target.value } : null); setPhoneError(null); }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              {phoneError && <div className="text-xs text-red-600 mt-1">{phoneError}</div>}
             </div>
 
             <div>

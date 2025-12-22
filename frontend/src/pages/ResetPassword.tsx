@@ -42,7 +42,7 @@ export default function ResetPassword() {
     setIsSubmitting(true);
 
     try {
-      const data = await fetchJson('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
+      const data = await fetchJson('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
       if (data.success) {
         setMessage('Password reset successful! Redirecting to login...');
         setTimeout(() => navigate('/login'), 2000);

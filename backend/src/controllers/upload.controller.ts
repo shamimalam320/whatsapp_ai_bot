@@ -41,12 +41,35 @@ export const deleteImage = async (req: Request, res: Response) => {
     const filename = req.params.filename;
     if (!filename) return res.status(400).json({ success: false, message: 'Filename required' });
 
-    // Prevent path traversal
-    if (filename.includes('..') || filename.includes('/')) {
+    // Prevent path traversal and encoded traversal attacks.
+    // Note: naive checks for '..' or '/' are insufficient because
+    // - attackers may send URL-encoded sequences (e.g. '%2e%2e' or '%2f') which decode to '../' or '/'
+    // - Windows may use backslashes (\) as path separators
+    // Use decodeURIComponent + path.basename to ensure we only accept the filename component,
+    // and enforce a tight whitelist of allowed filename characters.
+    let safeFilename: string;
+    try {
+      // Decode first to catch encoded traversal like '%2e%2e' -> '..'
+      const decoded = decodeURIComponent(filename);
+      // Use path.basename to strip any directory components and then enforce
+      // a strict whitelist. Using the basename here is important because an
+      // attacker might include path separators or encoded sequences that
+      // would otherwise bypass simple substring checks.
+      const base = path.basename(decoded);
+      const hasTraversal = decoded !== base || decoded.includes('..') || decoded.includes('/') || decoded.includes('\\');
+      const whitelist = /^[a-zA-Z0-9._-]+$/; // allow only safe filename characters
+      if (hasTraversal || !whitelist.test(base)) {
+        return res.status(400).json({ success: false, message: 'Invalid filename' });
+      }
+      safeFilename = base;
+    } catch (err) {
+      // decodeURIComponent may throw on malformed input — treat as invalid
       return res.status(400).json({ success: false, message: 'Invalid filename' });
     }
 
-    const filePath = path.join(uploadsDir, filename);
+    // Resolve the target path using the sanitized filename to ensure we
+    // never join attacker-controlled input directly into a path.
+    const filePath = path.join(uploadsDir, safeFilename);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, message: 'File not found' });
     }

@@ -21,6 +21,12 @@ export interface CreateOrderPayload {
   notes?: string;
 }
 
+// NOTE: The frontend `Product` type defined in `Products.tsx` has been extended
+// with attributes like `size`, `color`, `weight`, and `weightUnit`. If any
+// order-related code needs to reference product details, ensure the type
+// definitions here (or a shared type) are updated to match that Product
+// interface to maintain type safety when sending/receiving payloads.
+
 export interface UpdateOrderStatusPayload {
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
 }

@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../api/auth';
+import { isE164, E164_EXAMPLE } from '../utils/phone';
 import { useAuthStore } from '../store/authStore';
 
 export default function Register() {
@@ -29,6 +30,11 @@ export default function Register() {
         ...formData,
         phone: formData.phone ? `+91${formData.phone}` : '',
       };
+
+      if (formattedData.phone && !isE164(formattedData.phone)) {
+        setError(`Phone must be in E.164 format (e.g. ${E164_EXAMPLE})`);
+        return;
+      }
 
       const response = await authAPI.register(formattedData);
 

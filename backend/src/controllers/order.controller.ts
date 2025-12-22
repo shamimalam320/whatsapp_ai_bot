@@ -18,7 +18,7 @@ export const getOrders = async (req: Request, res: Response) => {
         message: 'Business ID not found',
       });
     }
-
+    
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
@@ -232,8 +232,8 @@ export const createOrder = async (req: Request, res: Response) => {
       // order returned from create() is an array because we used create([...])
       createdOrder = order[0];
     } catch (err) {
-      try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
-      try { session.endSession(); } catch (e) {}
+      try { if (session && typeof session.inTransaction === 'function' && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+      try { if (session) session.endSession(); } catch (e) {}
       throw err;
     }
 
@@ -248,10 +248,17 @@ ${orderSummary}
 
 Total: ₹${totalAmount}
 ${deliveryAddress ? `\nDelivery Address: ${deliveryAddress}` : ''}
-${delivery ? `\n(Parsed: ${[delivery.addressLine, delivery.locality, delivery.city, delivery.state, delivery.pincode].filter(Boolean).join(', ')})` : ''}
 
 We'll notify you when your order is ready for delivery.
 Thank you for your order! 🙏`;
+
+// Note: we intentionally do NOT include the parsed `delivery` object in the
+// customer-facing WhatsApp message — the parsed fields are primarily for
+// internal debugging and may be confusing if sent to customers. Log them
+// at debug level instead so developers can inspect when needed.
+if (delivery) {
+  logger.debug(`Parsed delivery for order ${createdOrder._id}: ${JSON.stringify(delivery)}`);
+}
 
     await whatsappService.sendMessage(customerPhone, confirmationMessage);
 
@@ -262,9 +269,9 @@ Thank you for your order! 🙏`;
       message: 'Order created successfully',
       data: createdOrder,
     });
-  } catch (error: any) {
+    } catch (error: any) {
     try {
-      if (typeof session !== 'undefined' && session.inTransaction && session.inTransaction()) {
+      if (session && typeof session.inTransaction === 'function' && session.inTransaction()) {
         await session.abortTransaction();
         session.endSession();
       }
@@ -322,7 +329,11 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       session.startTransaction();
       try {
         // If transitioning from non-cancelled -> cancelled, restore stock
-        if (status === 'cancelled' && order.status !== 'cancelled') {
+        // Use `oldStatus` (captured before the transaction) to ensure we only
+        // restore stock when the order was previously NOT cancelled. This
+        // prevents double-restores if a request attempts to cancel an already
+        // cancelled order concurrently or repeatedly.
+        if (status === 'cancelled' && oldStatus !== 'cancelled') {
           for (const it of order.items) {
             await Product.findByIdAndUpdate(it.productId, { $inc: { stock: it.quantity } }, { session });
             const p = await Product.findById(it.productId).session(session);
@@ -334,7 +345,8 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         }
 
         // If transitioning from cancelled -> non-cancelled (e.g., re-confirm), ensure stock available and reserve again
-        if (order.status === 'cancelled' && status !== 'cancelled') {
+        // Again use `oldStatus` so we only reserve when the previous status was cancelled
+        if (oldStatus === 'cancelled' && status !== 'cancelled') {
           // verify availability and decrement atomically
           for (const it of order.items) {
             const updated = await Product.findOneAndUpdate(
@@ -364,7 +376,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       break; // success
       } catch (err: any) {
         lastErr = err;
-        try { if (session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+        try { if (session && typeof session.inTransaction === 'function' && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
         try { session.endSession(); } catch (e) {}
         // If this is a write-conflict, try again; otherwise rethrow
         const isWriteConflict = /writeconflict/i.test(String(err?.message || '')) || err?.code === 112;
@@ -372,9 +384,23 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         if (!isWriteConflict || attempt >= maxAttempts) {
           throw err;
         }
-        // small backoff
-        await new Promise((r) => setTimeout(r, 50 * attempt));
+        // Backoff before retrying. Use exponential backoff with jitter to reduce
+        // contention under high load. Example: delay = random() * (2 ** attempt) * 50
+        // This avoids synchronized retries and provides better behavior than a
+        // fixed linear backoff.
+        const delayMs = Math.random() * (2 ** attempt) * 50;
+        await new Promise((r) => setTimeout(r, delayMs));
       }
+    }
+
+    // If we somehow exited the retry loop without successfully committing a
+    // transaction, ensure the last error is surfaced instead of silently
+    // continuing. This should be unreachable because we re-throw on final
+    // failure inside the loop, but defensively check `lastErr` and throw it
+    // so the outer catch handler can process it (logs/500 response).
+    if (lastErr) {
+      logger.error('Order status update failed after retries:', lastErr);
+      throw lastErr;
     }
 
     // Send status update message

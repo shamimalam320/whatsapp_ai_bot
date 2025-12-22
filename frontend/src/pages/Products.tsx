@@ -686,7 +686,7 @@ export default function Products() {
             <h2 className="text-2xl font-bold mb-6">Bulk Upload Products (CSV)</h2>
             <div className="text-sm text-gray-700 mb-4">
               Upload a CSV with headers: name, nameHindi, description, price, category, stock, size, color, weight, weightUnit (gram/kg), images (semicolon separated).<br />
-              <span className="text-red-600 font-semibold">Note: The 'variants' field is no longer supported and should be removed from any existing CSV templates.</span>
+              <span className="text-green-700 font-semibold">Optional: `variants` are supported as a semicolon-separated list where each variant is specified as <code>name:price</code> (e.g. <em>Small:9.99;Large:12.99</em>).</span>
             </div>
             <input type="file" accept="text/csv,text/plain" onChange={(e) => handleBulkUploadFile(e.target.files?.[0] || null)} disabled={bulkUploading} />
             <div className="flex justify-end space-x-3 mt-6">
