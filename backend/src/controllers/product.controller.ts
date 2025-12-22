@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
 import Product from '../models/Product';
+import fs from 'fs';
+import path from 'path';
 import { logger } from '../utils/logger';
 
 // @route   GET /api/products
@@ -45,10 +47,33 @@ export const getProducts = async (req: Request, res: Response) => {
       .skip(skip)
       .limit(limit);
 
+    // sanitize image arrays in the response so UI doesn't receive non-image strings
+    const sanitizeImages = (arr: any) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map((s: any) => (typeof s === 'string' ? s.trim() : '')).filter((s: string) => {
+        if (!s) return false;
+        if (/^https?:\/\//i.test(s)) return true;
+        if (/^\/uploads|^uploads\//i.test(s)) return true;
+        if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+        return false;
+      });
+    };
+
+    const sanitizedProducts = products.map((p: any) => {
+      const doc = p.toObject ? p.toObject() : p;
+      const originalImages = doc.images || [];
+      doc.images = sanitizeImages(doc.images);
+      // Log if we filtered any images (helps debug)
+      if (originalImages.length !== doc.images.length) {
+        logger.info(`Filtered ${originalImages.length - doc.images.length} invalid images from product ${doc._id}`);
+      }
+      return doc;
+    });
+
     res.json({
       success: true,
       data: {
-        products,
+        products: sanitizedProducts,
         pagination: {
           total,
           page,
@@ -89,9 +114,24 @@ export const getProduct = async (req: Request, res: Response) => {
       });
     }
 
+    // ensure result includes only valid image urls/paths
+    const sanitizeImages = (arr: any) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map((s: any) => (typeof s === 'string' ? s.trim() : '')).filter((s: string) => {
+        if (!s) return false;
+        if (/^https?:\/\//i.test(s)) return true;
+        if (/^\/uploads|^uploads\//i.test(s)) return true;
+        if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+        return false;
+      });
+    };
+
+    const out = product.toObject ? product.toObject() : product;
+    out.images = sanitizeImages(out.images);
+
     res.json({
       success: true,
-      data: product,
+      data: out,
     });
   } catch (error: any) {
     logger.error('Get product error:', error);
@@ -124,10 +164,25 @@ export const createProduct = async (req: Request, res: Response) => {
       });
     }
 
-    const product = await Product.create({
-      ...req.body,
-      businessId,
-    });
+    // sanitize images array - accept absolute urls, /uploads paths, or filenames with image extensions
+    const sanitizeImages = (arr: any) => {
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .filter((v: any) => typeof v === 'string')
+        .map((s: string) => s.trim())
+        .filter((s: string) => {
+          if (!s) return false;
+          if (/^https?:\/\//i.test(s)) return true;
+          if (/^\/uploads|^uploads\//i.test(s)) return true;
+          if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+          return false;
+        });
+    };
+
+    const payload = { ...req.body, businessId } as any;
+    if (payload.images) payload.images = sanitizeImages(payload.images);
+
+    const product = await Product.create(payload);
 
     logger.info(`Product created: ${product.name} by business ${businessId}`);
 
@@ -192,7 +247,14 @@ export const bulkUploadProducts = async (req: Request, res: Response) => {
     for (const row of parsed) {
       const price = parseFloat(row.price || '0') || 0;
       const stock = parseInt(row.stock || '0') || 0;
-      const images = row.images ? row.images.split(';').map((s: string) => s.trim()).filter(Boolean) : [];
+      const rawImages = row.images ? row.images.split(';').map((s: string) => s.trim()).filter(Boolean) : [];
+      const images = rawImages.filter((s: string) => {
+        if (!s) return false;
+        if (/^https?:\/\//i.test(s)) return true;
+        if (/^\/uploads|^uploads\//i.test(s)) return true;
+        if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+        return false;
+      });
       const variants = [];
       if (row.variants) {
         // variants separated by ; each variant like name:price
@@ -252,9 +314,59 @@ export const updateProduct = async (req: Request, res: Response) => {
       });
     }
 
+    // sanitize images for updates too
+    const updatePayload: any = { ...req.body };
+    if (updatePayload.images && Array.isArray(updatePayload.images)) {
+      updatePayload.images = updatePayload.images
+        .filter((v: any) => typeof v === 'string')
+        .map((s: string) => s.trim())
+        .filter((s: string) => {
+          if (!s) return false;
+          if (/^https?:\/\//i.test(s)) return true;
+          if (/^\/uploads|^uploads\//i.test(s)) return true;
+          if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
+          return false;
+        });
+    }
+
+    // If the client sent a list of deleted images (strings), attempt to remove those files from disk
+    const deletedImages: string[] = Array.isArray(req.body.deletedImages) ? req.body.deletedImages : [];
+    const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+    for (const img of deletedImages) {
+      try {
+        if (!img) continue;
+        // If img is full URL, pick filename
+        let filename = img;
+        try { const u = new URL(img); filename = path.basename(u.pathname); } catch (e) {}
+        // Decode and sanitize filename to prevent path traversal and ensure file is within uploads
+        let decodedFilename: string;
+        try {
+          decodedFilename = decodeURIComponent(filename);
+        } catch {
+          // If decoding fails, skip this entry
+          continue;
+        }
+        // Disallow any path separators or traversal sequences in the filename
+        if (!decodedFilename || decodedFilename.includes('..') || decodedFilename.includes('/') || decodedFilename.includes('\\')) {
+          continue;
+        }
+        const filePath = path.resolve(uploadsDir, decodedFilename);
+        // Ensure the resolved path is still within the uploads directory
+        if (!filePath.startsWith(uploadsDir + path.sep)) {
+          continue;
+        }
+        if (fs.existsSync(filePath)) {
+          await fs.promises.unlink(filePath);
+        }
+      } catch (e) {
+        // Log but don't fail update
+        console.warn('Failed to delete file', img, e);
+      }
+    }
+
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { $set: updatePayload },
       { new: true, runValidators: true }
     );
 

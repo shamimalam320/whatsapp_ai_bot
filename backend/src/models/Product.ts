@@ -4,6 +4,10 @@ export interface IProduct extends Document {
   businessId: mongoose.Types.ObjectId;
   name: string;
   nameHindi?: string;
+  size?: string;
+  color?: string;
+  weight?: number;
+  weightUnit?: 'gram' | 'kg';
   description: string;
   descriptionHindi?: string;
   price: number;
@@ -12,10 +16,6 @@ export interface IProduct extends Document {
   inStock: boolean;
   stock?: number;
   isActive: boolean;
-  variants: Array<{
-    name: string;
-    price: number;
-  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +34,22 @@ const productSchema = new Schema<IProduct>({
   nameHindi: {
     type: String,
     trim: true
+  },
+  size: {
+    type: String,
+    trim: true
+  },
+  color: {
+    type: String,
+    trim: true
+  },
+  weight: {
+    type: Number,
+    min: 0
+  },
+  weightUnit: {
+    type: String,
+    enum: ['gram', 'kg']
   },
   description: {
     type: String,
@@ -68,18 +84,7 @@ const productSchema = new Schema<IProduct>({
   isActive: {
     type: Boolean,
     default: true
-  },
-  variants: [{
-    name: {
-      type: String,
-      required: true
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 0
-    }
-  }]
+  }
 }, {
   timestamps: true
 });

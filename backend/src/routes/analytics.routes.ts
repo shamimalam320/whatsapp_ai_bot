@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { getOverview, getChatAnalytics, getSalesAnalytics } from '../controllers/analytics.controller';
+import { getOverview, getDashboard, getChatAnalytics, getSalesAnalytics } from '../controllers/analytics.controller';
 
 const router = Router();
 
@@ -8,6 +8,11 @@ const router = Router();
 // @desc    Get dashboard overview stats (counts)
 // @access  Private
 router.get('/overview', authenticate, getOverview);
+
+// @route   GET /api/analytics/dashboard
+// @desc    Get comprehensive analytics dashboard data
+// @access  Private
+router.get('/dashboard', authenticate, getDashboard);
 
 // @route   GET /api/analytics/chats
 // @desc    Get chat analytics
