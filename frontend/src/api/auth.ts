@@ -51,15 +51,15 @@ class AuthAPI {
   // headers are handled by fetchJson; remove unused helper
 
   async register(data: RegisterData): Promise<AuthResponse> {
-    return fetchJson('/auth/register', { method: 'POST', body: JSON.stringify(data) });
+    return fetchJson('/api/auth/register', { method: 'POST', body: JSON.stringify(data) });
   }
 
   async login(data: LoginData): Promise<AuthResponse> {
-    return fetchJson('/auth/login', { method: 'POST', body: JSON.stringify(data) });
+    return fetchJson('/api/auth/login', { method: 'POST', body: JSON.stringify(data) });
   }
 
   async getCurrentUser(): Promise<UserResponse> {
-    return fetchJson('/auth/me');
+    return fetchJson('/api/auth/me');
   }
 
   saveToken(token: string): void {
