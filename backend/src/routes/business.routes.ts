@@ -76,7 +76,7 @@ router.put('/profile', authenticate, async (req, res) => {
 
     // Debug note: ensure address is returned from business doc after update
     // (helps validate the saved address is available to the API caller)
-    console.info('Business profile updated for', req.user.businessId, 'address:', (business as any)?.address);
+    logger.info('Business profile updated for', req.user.businessId, 'address:', (business as any)?.address);
 
     const merged = {
       _id: business?._id,
