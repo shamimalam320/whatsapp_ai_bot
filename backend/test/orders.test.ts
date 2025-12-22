@@ -89,8 +89,7 @@ test('concurrent orders do not oversell (one wins)', async () => {
   // stock should not be negative; should be either 4 if one succeeded or 10 if both failed
   expect(pAfter!.stock).toBeGreaterThanOrEqual(0);
   expect(pAfter!.stock).toBeLessThanOrEqual(10);
-
-  // At least one request should have failed
+  // At most one request should succeed (so at least one of the two fails)
   const successCount = [res1, res2].filter((r)=>r._status === 201).length;
   expect(successCount).toBeLessThanOrEqual(1);
 });
