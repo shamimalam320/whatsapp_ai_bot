@@ -2,9 +2,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IFaq extends Document {
   businessId: mongoose.Types.ObjectId | null; // null = global template
-  category?: string; // category tab
   question: string;
-  answer: { en?: string; hi?: string };
+  answer: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -12,12 +11,11 @@ export interface IFaq extends Document {
 
 const faqSchema = new Schema<IFaq>({
   businessId: { type: Schema.Types.ObjectId, ref: 'Business', default: null },
-  category: { type: String, default: 'general' },
   question: { type: String, required: true },
-  answer: { type: Schema.Types.Mixed, default: {} },
+  answer: { type: String, required: true },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
-faqSchema.index({ businessId: 1, category: 1 });
+faqSchema.index({ businessId: 1 });
 
 export default mongoose.model<IFaq>('Faq', faqSchema);

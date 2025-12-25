@@ -9,13 +9,14 @@ export default function Faqs() {
   const [editingFaq, setEditingFaq] = useState<any | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [question, setQuestion] = useState('');
-  const [answerEn, setAnswerEn] = useState('');
-  // FAQ category currently fixed to 'general' for MVP
-  const [category] = useState('general');
+  const [answer, setAnswer] = useState('');
   // 'all' = show everyone, 'published' = only active, 'unpublished' = only inactive
   // default to 'published' as requested
   const [filter, setFilter] = useState<'all' | 'published' | 'unpublished'>('published');
   const [selected, setSelected] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const { user } = useAuthStore();
 
@@ -24,8 +25,7 @@ export default function Faqs() {
   async function fetchList() {
     setLoading(true);
     try {
-      const businessId = user?.business?.id;
-      const params: any = { businessId, category };
+      const params: any = {};
       if (filter === 'published') params.onlyActive = true;
       else if (filter === 'unpublished') params.onlyActive = false;
 
@@ -42,13 +42,13 @@ export default function Faqs() {
   async function handleAdd(e: any) {
     e.preventDefault();
     try {
-      const payload = { question, answer: { en: answerEn }, category };
+      const payload = { question, answer };
       const res = await faqsApi.createFaq(payload);
       if (res.success) {
         // Immediately show the new faq in UI (optimistic)
         if (res.data) setFaqs((prev) => [res.data, ...prev]);
         setQuestion('');
-        setAnswerEn('');
+        setAnswer('');
         // refresh from server just to normalize
         fetchList();
       } else {
@@ -104,16 +104,160 @@ export default function Faqs() {
     }
   }
 
+  // Export FAQs as CSV
+  function handleExport() {
+    if (faqs.length === 0) {
+      alert('No FAQs to export');
+      return;
+    }
+
+    // CSV headers
+    const headers = ['question', 'answer', 'isActive'];
+    const rows = faqs.map(faq => [
+      `"${(faq.question || '').replace(/"/g, '""')}"`,
+      `"${(faq.answer || '').replace(/"/g, '""')}"`,
+      faq.isActive ? 'true' : 'false',
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `faqs_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  }
+
+  // Import FAQs from CSV
+  async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setImportMessage('');
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        setImportMessage('❌ CSV file is empty or invalid');
+        setImporting(false);
+        return;
+      }
+
+      // Parse CSV (simple implementation, assumes no commas in quoted fields beyond our format)
+      const parseCsvLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current);
+        return result;
+      };
+
+      // Skip header row
+      const dataRows = lines.slice(1);
+      const faqsToImport: any[] = [];
+
+      for (const line of dataRows) {
+        const columns = parseCsvLine(line);
+        if (columns.length < 2) continue; // Skip invalid rows
+
+        const [question, answer, statusVal = 'true'] = columns;
+        
+        if (!question.trim() || !answer.trim()) continue;
+
+        faqsToImport.push({
+          question: question.trim(),
+          answer: answer.trim(),
+          isActive: statusVal.trim().toLowerCase() === 'true',
+        });
+      }
+
+      if (faqsToImport.length === 0) {
+        setImportMessage('❌ No valid FAQs found in CSV');
+        setImporting(false);
+        return;
+      }
+
+      // Call bulk import API
+      const result = await faqsApi.bulkImportFaqs(faqsToImport);
+      
+      if (result.success) {
+        const msg = `✅ Imported ${result.data.created} FAQs${result.data.skipped > 0 ? `, skipped ${result.data.skipped} duplicates` : ''}${result.data.errors > 0 ? `, ${result.data.errors} errors` : ''}`;
+        setImportMessage(msg);
+        fetchList(); // Refresh the list
+      } else {
+        setImportMessage(`❌ Import failed: ${result.message}`);
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+      setImportMessage(`❌ Import failed: ${error.message || 'Unknown error'}`);
+    } finally {
+      setImporting(false);
+      // Reset file input
+      event.target.value = '';
+    }
+  }
+
   return (
     <Layout>
       <div className="py-10 max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold mb-6">FAQs</h1>
 
         <div className="bg-white rounded-lg p-6 mb-6">
-          <h2 className="font-semibold mb-3">Add FAQ</h2>
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-semibold">Add FAQ</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={handleExport}
+                className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 flex items-center gap-1"
+                title="Export FAQs as CSV"
+              >
+                <span>📥</span>
+                Export CSV
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 flex items-center gap-1"
+              >
+                <span>📤</span>
+                Import CSV
+              </button>
+            </div>
+          </div>
+
+          {importMessage && (
+            <div className={`mb-3 p-2 rounded text-sm ${importMessage.startsWith('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+              {importMessage}
+            </div>
+          )}
+
+          {importing && (
+            <div className="mb-3 p-2 rounded text-sm bg-blue-100 text-blue-800">
+              Importing FAQs...
+            </div>
+          )}
+
           <form onSubmit={handleAdd} className="space-y-3">
             <input className="w-full px-3 py-2 border rounded" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" required />
-            <textarea className="w-full px-3 py-2 border rounded" value={answerEn} onChange={e=>setAnswerEn(e.target.value)} placeholder="Answer" rows={3} required />
+            <textarea className="w-full px-3 py-2 border rounded" value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="Answer" rows={3} required />
             <div className="flex justify-end">
               <button className="px-4 py-2 bg-indigo-600 text-white rounded" type="submit">Add FAQ</button>
             </div>
@@ -192,7 +336,7 @@ export default function Faqs() {
                       />
                       <div>
                         <div className="text-sm font-medium">{f.question}</div>
-                        <div className="text-xs text-gray-600 mt-1">{f.answer?.en}</div>
+                        <div className="text-xs text-gray-600 mt-1">{f.answer}</div>
                       </div>
                     </div>
                         <div className="flex-shrink-0 ml-3 flex items-start gap-2">
@@ -227,13 +371,53 @@ export default function Faqs() {
               <div className="bg-white p-6 rounded-lg w-full max-w-xl mx-4">
                 <h3 className="text-lg font-semibold mb-3">Edit FAQ</h3>
                 <form onSubmit={handleUpdate} className="space-y-3">
+                  <label className="block text-sm font-medium mb-1">Question</label>
                   <input value={editingFaq.question} onChange={(e) => setEditingFaq((s:any) => ({ ...s, question: e.target.value }))} className="w-full px-3 py-2 border rounded" />
-                  <textarea rows={4} value={editingFaq.answer?.en || ''} onChange={(e) => setEditingFaq((s:any) => ({ ...s, answer: { ...s.answer, en: e.target.value } }))} className="w-full px-3 py-2 border rounded" />
+                  <label className="block text-sm font-medium mb-1 mt-3">Answer</label>
+                  <textarea rows={4} value={editingFaq.answer || ''} onChange={(e) => setEditingFaq((s:any) => ({ ...s, answer: e.target.value }))} className="w-full px-3 py-2 border rounded" />
                   <div className="flex justify-end gap-2 mt-3">
                     <button type="button" onClick={() => { setShowEditModal(false); setEditingFaq(null); }} className="px-3 py-1 border rounded">Cancel</button>
                     <button type="submit" className="px-3 py-1 bg-green-600 text-white rounded">Save</button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* FAQ Import Modal */}
+          {showImportModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4">
+                <h2 className="text-2xl font-bold mb-6">Bulk Upload FAQs (CSV)</h2>
+                <div className="text-sm text-gray-700 mb-4 space-y-2">
+                  <p>
+                    <strong>Required CSV Headers:</strong> question, answer
+                  </p>
+                  <p className="text-sm italic text-gray-500">
+                    Example: "What are your hours?","We are open 9am-9pm"
+                  </p>
+                </div>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={handleImport} 
+                  disabled={importing}
+                  className="mb-4 w-full"
+                />
+                {importMessage && (
+                  <div className={`mb-3 p-2 rounded text-sm ${importMessage.startsWith('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {importMessage}
+                  </div>
+                )}
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button 
+                    type="button" 
+                    onClick={() => { setShowImportModal(false); setImportMessage(''); }} 
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}

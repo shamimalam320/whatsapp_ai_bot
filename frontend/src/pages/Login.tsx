@@ -14,6 +14,8 @@ export default function Login() {
   });
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -25,6 +27,8 @@ export default function Login() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setVerificationError('');
+    setUnverifiedEmail('');
     setIsSubmitting(true);
     setLoading(true);
 
@@ -40,17 +44,23 @@ export default function Login() {
         // Redirect to dashboard
         navigate('/dashboard');
       } else {
-        // Handle different error scenarios
-        const errorMessage = response.message || 'Login failed. Please try again.';
-        
-        // Check if user doesn't exist
-        if (errorMessage.toLowerCase().includes('invalid email') || 
-            errorMessage.toLowerCase().includes('user') && errorMessage.toLowerCase().includes('not found')) {
-          setError('No account found with this email. Please sign up first.');
-        } else if (errorMessage.toLowerCase().includes('password')) {
-          setError('Incorrect password. Please try again.');
+        // Check for email verification error
+        if (response.requiresVerification) {
+          setVerificationError(response.message);
+          setUnverifiedEmail(response.email || formData.email);
         } else {
-          setError(errorMessage);
+          // Handle different error scenarios
+          const errorMessage = response.message || 'Login failed. Please try again.';
+          
+          // Check if user doesn't exist
+          if (errorMessage.toLowerCase().includes('invalid email') || 
+              errorMessage.toLowerCase().includes('user') && errorMessage.toLowerCase().includes('not found')) {
+            setError('No account found with this email. Please sign up first.');
+          } else if (errorMessage.toLowerCase().includes('password')) {
+            setError('Incorrect password. Please try again.');
+          } else {
+            setError(errorMessage);
+          }
         }
       }
     } catch (err: any) {
@@ -83,6 +93,27 @@ export default function Login() {
               </div>
               <div className="ml-3">
                 <p className="text-sm text-green-700">{successMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {verificationError && (
+          <div className="rounded-md bg-yellow-50 p-4 border border-yellow-200">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <p className="text-sm text-yellow-700 mb-2">{verificationError}</p>
+                <button
+                  onClick={() => navigate('/resend-verification', { state: { email: unverifiedEmail } })}
+                  className="text-sm text-yellow-800 hover:text-yellow-900 underline font-medium"
+                >
+                  Resend verification email
+                </button>
               </div>
             </div>
           </div>

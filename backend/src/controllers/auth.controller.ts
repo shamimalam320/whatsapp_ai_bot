@@ -53,12 +53,14 @@ export const register = async (req: Request, res: Response) => {
     }
 
     console.log('Creating new user...');
+    
     // Create user (password will be hashed by pre-save hook)
     const user = await User.create({
       email: email.toLowerCase(),
       password, // Don't hash here - let the model's pre-save hook do it
       name,
       phone: phone || '', // Provide empty string if not given
+      emailVerified: false // User must verify email - this is mandatory for security
     });
     console.log('User created:', user._id);
 
@@ -98,32 +100,33 @@ export const register = async (req: Request, res: Response) => {
     user.businessId = business._id;
     await user.save();
 
-    // Generate token
-    const token = generateToken(user._id.toString());
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+    
+    user.emailVerificationToken = hashedToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await user.save();
 
-    logger.info(`New user registered: ${email}`);
+    // Create verification URL
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email?token=${verificationToken}`;
 
-    // Send welcome email (non-blocking)
-    emailService.sendWelcomeEmail(email, name).catch(err => 
-      logger.error('Failed to send welcome email:', err)
+    // Send verification email (non-blocking)
+    emailService.sendVerificationEmail(email, name, verificationUrl).catch(err => 
+      logger.error('Failed to send verification email:', err)
     );
 
+    logger.info(`New user registered: ${email}, verification email sent`);
+
+    // DON'T return JWT token - user must verify email first
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
-      data: {
-        token,
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-          phone: user.phone,
-          business: {
-            id: business._id,
-            name: business.name,
-          },
-        },
-      },
+      message: 'Registration successful! Please check your email to verify your account.',
+      requiresVerification: true,
+      email: user.email
     });
   } catch (error: any) {
     logger.error('Registration error:', error);
@@ -172,6 +175,16 @@ export const login = async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         message: 'No account found with this email. Please register first.',
+      });
+    }
+
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before logging in. Check your inbox for the verification link.',
+        requiresVerification: true,
+        email: user.email
       });
     }
 
@@ -372,6 +385,136 @@ export const resetPassword = async (req: Request, res: Response) => {
       success: false,
       message: 'Server error resetting password',
       error: error.message,
+    });
+  }
+};
+
+// @route   GET /api/auth/verify-email
+// @desc    Verify email with token from email link
+// @access  Public
+export const verifyEmail = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.query;
+    
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is required'
+      });
+    }
+    
+    // Hash the token from URL to match stored hash
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+    
+    // Find user with this token that hasn't expired
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: { $gt: new Date() }
+    }).select('+emailVerificationToken +emailVerificationExpires');
+    
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification token. Please request a new one.'
+      });
+    }
+    
+    // Check if already verified
+    if (user.emailVerified) {
+      return res.status(200).json({
+        success: true,
+        message: 'Email already verified. You can login now.',
+        alreadyVerified: true
+      });
+    }
+    
+    // Mark as verified and clear token
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+    
+    logger.info(`Email verified for user: ${user.email}`);
+    
+    // Send welcome email after verification
+    emailService.sendWelcomeEmail(user.email, user.name).catch(err => 
+      logger.error('Failed to send welcome email:', err)
+    );
+    
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully! You can now login.',
+      verified: true
+    });
+    
+  } catch (error: any) {
+    logger.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during email verification'
+    });
+  }
+};
+
+// @route   POST /api/auth/resend-verification
+// @desc    Resend verification email
+// @access  Public
+export const resendVerification = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+    
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('+emailVerificationToken +emailVerificationExpires');
+    
+    if (!user) {
+      // Don't reveal if email exists for security
+      return res.status(200).json({
+        success: true,
+        message: 'If that email exists, a verification link has been sent.'
+      });
+    }
+    
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified. You can login now.'
+      });
+    }
+    
+    // Generate new token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    
+    user.emailVerificationToken = hashedToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+    
+    // Send email
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email?token=${verificationToken}`;
+    await emailService.sendVerificationEmail(user.email, user.name, verificationUrl);
+    
+    logger.info(`Verification email resent to: ${user.email}`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Verification email sent. Please check your inbox.'
+    });
+    
+  } catch (error: any) {
+    logger.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification email'
     });
   }
 };
