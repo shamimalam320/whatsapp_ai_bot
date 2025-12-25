@@ -2,14 +2,10 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { getRedisClient } from '../utils/redis';
 
-// NOTE: Calling `getRedisClient()` at module load time means the Redis
-// client is created when the module is imported. If Redis is unavailable
-// during application startup this can throw and prevent the whole app
-// from starting. Consider lazy initialization (e.g., call `getRedisClient()`
-// inside the request handler on first use), or make `getRedisClient()`
-// return a resilient/no-op cache adapter when Redis is unavailable so
-// the location lookup can gracefully degrade without failing the app.
-
+// NOTE: `getRedisClient()` is intentionally called inside the request handler
+// so the Redis client is initialized lazily. The Redis utility returns a
+// resilient/no-op cache adapter when Redis is unavailable, allowing the
+// location lookup to gracefully degrade without failing the application.
 export async function getPincode(req: Request, res: Response) {
   const { pincode } = req.params;
   if (!/^[0-9]{6}$/.test(pincode)) {
