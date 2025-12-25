@@ -269,7 +269,7 @@ if (delivery) {
       message: 'Order created successfully',
       data: createdOrder,
     });
-    } catch (error: any) {
+  } catch (error: any) {
     try {
       if (session && typeof session.inTransaction === 'function' && session.inTransaction()) {
         await session.abortTransaction();
