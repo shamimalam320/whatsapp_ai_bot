@@ -17,3 +17,7 @@ export async function updateFaq(id: string, payload: any) {
 export async function deleteFaq(id: string) {
   return fetchJson(`/api/faqs/${id}`, { method: 'DELETE' });
 }
+
+export async function bulkImportFaqs(faqs: any[]) {
+  return fetchJson('/api/faqs/bulk-import', { method: 'POST', body: JSON.stringify({ faqs }) });
+}

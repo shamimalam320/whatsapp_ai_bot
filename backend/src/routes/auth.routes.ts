@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, getMe, forgotPassword, resetPassword } from '../controllers/auth.controller';
+import { register, login, getMe, forgotPassword, resetPassword, verifyEmail, resendVerification } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { registerValidation, loginValidation } from '../middleware/validation.middleware';
 
@@ -29,5 +29,15 @@ router.post('/forgot-password', forgotPassword);
 // @desc    Reset password with token
 // @access  Public
 router.post('/reset-password', resetPassword);
+
+// @route   GET /api/auth/verify-email
+// @desc    Verify email with token
+// @access  Public
+router.get('/verify-email', verifyEmail);
+
+// @route   POST /api/auth/resend-verification
+// @desc    Resend verification email
+// @access  Public
+router.post('/resend-verification', resendVerification);
 
 export default router;

@@ -30,6 +30,8 @@ interface AuthResponse {
     };
   };
   errors?: Array<{ msg: string; param: string }>;
+  requiresVerification?: boolean;
+  email?: string;
 }
 
 interface UserResponse {

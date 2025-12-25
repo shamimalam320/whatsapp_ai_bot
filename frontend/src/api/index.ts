@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+// Default to an empty string so requests are relative ("/api/...") when
+// the frontend is served by nginx (and nginx proxies /api to the backend).
+// During local development set VITE_API_BASE_URL in .env to e.g. http://localhost:5000
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''; 
 
 function getToken(): string | null {
   return localStorage.getItem('token');
