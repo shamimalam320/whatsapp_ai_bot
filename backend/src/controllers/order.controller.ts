@@ -269,7 +269,7 @@ if (delivery) {
       message: 'Order created successfully',
       data: createdOrder,
     });
-    } catch (error: any) {
+  } catch (error: any) {
     try {
       if (session && typeof session.inTransaction === 'function' && session.inTransaction()) {
         await session.abortTransaction();
@@ -373,7 +373,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       await session.commitTransaction();
       session.endSession();
       break; // success
-            } catch (err: any) {
+      } catch (err: any) {
         lastErr = err;
         try { if (session && typeof session.inTransaction === 'function' && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
         try { session.endSession(); } catch (e) {}
