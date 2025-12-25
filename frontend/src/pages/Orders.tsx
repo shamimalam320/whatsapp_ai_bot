@@ -5,6 +5,7 @@ import Layout from '../components/Layout';
 import { useAuthStore } from '../store/authStore';
 import { createOrder as createOrderApi, getOrders as getOrdersApi, updateOrderStatus as updateOrderStatusApi } from '../api/orders';
 import { getProducts } from '../api/products';
+import { isE164, E164_EXAMPLE } from '../utils/phone';
 
 interface OrderItem {
   productId: string;
@@ -268,13 +269,12 @@ export default function Orders() {
       return;
     }
 
-      // Validate phone number (E.164 required)
-      const { isE164, E164_EXAMPLE } = await import('../utils/phone');
-      if (!isE164(createForm.customerPhone)) {
-        setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
-        alert(`Please enter a phone number in E.164 format (e.g. ${E164_EXAMPLE})`);
-        return;
-      }
+    // Validate phone number (E.164 required)
+    if (!isE164(createForm.customerPhone)) {
+      setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
+      alert(`Please enter a phone number in E.164 format (e.g. ${E164_EXAMPLE})`);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -727,8 +727,13 @@ export default function Orders() {
                         placeholder="+919876543210 (E.164)"
                         value={createForm.customerPhone}
                         onChange={(e) => {
-                          setCreateForm({ ...createForm, customerPhone: e.target.value });
-                          setPhoneError(null);
+                          const phone = e.target.value;
+                          setCreateForm({ ...createForm, customerPhone: phone });
+                          if (phone && !isE164(phone)) {
+                            setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
+                          } else {
+                            setPhoneError(null);
+                          }
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                       />

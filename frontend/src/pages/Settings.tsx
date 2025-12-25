@@ -290,7 +290,15 @@ export default function Settings() {
                 type="text"
                 placeholder="+919876543210 (E.164)"
                 value={profile?.phone || ''}
-                onChange={(e) => { setProfile(prev => prev ? { ...prev, phone: e.target.value } : null); setPhoneError(null); }}
+                onChange={(e) => {
+                  const phone = e.target.value;
+                  setProfile(prev => prev ? { ...prev, phone } : null);
+                  if (phone && !isE164(phone)) {
+                    setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
+                  } else {
+                    setPhoneError(null);
+                  }
+                }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               {phoneError && <div className="text-xs text-red-600 mt-1">{phoneError}</div>}
