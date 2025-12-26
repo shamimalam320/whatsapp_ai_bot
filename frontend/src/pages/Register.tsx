@@ -90,7 +90,7 @@ export default function Register() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4"  style={{ display: success ? 'none' : 'block' }}>
+        <form onSubmit={handleSubmit} className="space-y-4" hidden={!!success}>
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
               Full Name *
