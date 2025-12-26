@@ -13,6 +13,7 @@ export interface ProductPayload {
   stock?: number;
   images?: string[];
   deletedImages?: string[];
+  variants?: string | { name: string; price: number }[];
 }
 
 export interface GetProductsParams {

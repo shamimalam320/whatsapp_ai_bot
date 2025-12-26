@@ -219,23 +219,58 @@ export const bulkUploadProducts = async (req: Request, res: Response) => {
     } else if (typeof csv === 'string') {
       // Better CSV parser: handles quoted fields and commas inside quotes
       // Split lines respecting CRLF and LF and ignore empty lines
-      const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const lines = csv.split(/\r?\n/).filter(l => l.trim());
       if (lines.length < 2) return res.status(400).json({ success: false, message: 'CSV must include header and at least one row' });
 
-      // Headers from first line
-      const headers = lines[0].match(/(?:\"([^\"]*)\"|[^,])+?/g)?.map(h => h.replace(/^\s*"|"\s*$/g, '').trim().toLowerCase()) || [];
+      // Headers from first line - parse properly handling quotes
+      const headerLine = lines[0];
+      const headers: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < headerLine.length; i++) {
+        const char = headerLine[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          headers.push(current.trim().toLowerCase());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      headers.push(current.trim().toLowerCase());
 
-      const splitter = /,(?=(?:[^"]*"[^"]*")*[^"]*$)/; // comma not inside quotes
+      logger.info(`CSV Headers detected: ${headers.join(', ')}`);
 
+      // Parse each data row
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(splitter).map(c => c.trim());
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const cols: string[] = [];
+        current = '';
+        inQuotes = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            cols.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        cols.push(current.trim());
+
         const obj: any = {};
         for (let j = 0; j < headers.length; j++) {
           const key = headers[j];
-          let val = cols[j] || '';
-          val = val.replace(/^"|"$/g, '');
-          obj[key] = val;
+          obj[key] = cols[j] || '';
         }
+        
         parsed.push(obj);
       }
     } else {
@@ -247,6 +282,8 @@ export const bulkUploadProducts = async (req: Request, res: Response) => {
     for (const row of parsed) {
       const price = parseFloat(row.price || '0') || 0;
       const stock = parseInt(row.stock || '0') || 0;
+      const weight = parseFloat(row.weight || '0') || 0;
+      
       const rawImages = row.images ? row.images.split(';').map((s: string) => s.trim()).filter(Boolean) : [];
       const images = rawImages.filter((s: string) => {
         if (!s) return false;
@@ -255,6 +292,7 @@ export const bulkUploadProducts = async (req: Request, res: Response) => {
         if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i.test(s)) return true;
         return false;
       });
+      
       const variants = [];
       if (row.variants) {
         // variants separated by ; each variant like name:price
@@ -275,6 +313,12 @@ export const bulkUploadProducts = async (req: Request, res: Response) => {
         descriptionHindi: row.descriptionhindi || '',
         price,
         category: row.category || 'general',
+        size: row.size || '',
+        color: row.color || '',
+        weight: weight > 0 ? weight : undefined,
+        weightUnit: (row.weightunit && ['gram', 'kg'].includes(row.weightunit.toLowerCase())) 
+          ? row.weightunit.toLowerCase() as 'gram' | 'kg' 
+          : undefined,
         images,
         inStock: row.instock === 'false' ? false : true,
         stock,
@@ -328,6 +372,26 @@ export const updateProduct = async (req: Request, res: Response) => {
           return false;
         });
     }
+
+      // sanitize variants if provided in update payload
+      if (updatePayload.variants) {
+        // accept either array of {name,price} or semicolon CSV style string
+        let sanitizedVariants: any[] = [];
+        if (Array.isArray(updatePayload.variants)) {
+          sanitizedVariants = updatePayload.variants.map((v: any) => ({
+            name: String(v.name || '').trim(),
+            price: Math.max(0, parseFloat(String(v.price || 0)) || 0),
+          })).filter((v: any) => v.name);
+        } else if (typeof updatePayload.variants === 'string') {
+          const parts = updatePayload.variants.split(';').map((s: string) => s.trim()).filter(Boolean);
+          for (const p of parts) {
+            const [n, pr] = p.split(':').map((s: string) => s.trim());
+            const vprice = Math.max(0, parseFloat(pr || '0') || 0);
+            if (n) sanitizedVariants.push({ name: n, price: vprice });
+          }
+        }
+        updatePayload.variants = sanitizedVariants;
+      }
 
     // If the client sent a list of deleted images (strings), attempt to remove those files from disk
     const deletedImages: string[] = Array.isArray(req.body.deletedImages) ? req.body.deletedImages : [];

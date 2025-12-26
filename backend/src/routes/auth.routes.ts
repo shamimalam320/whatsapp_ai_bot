@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { register, login, getMe, forgotPassword, resetPassword, verifyEmail, resendVerification } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { registerValidation, loginValidation } from '../middleware/validation.middleware';
+import { passwordResetRateLimiter, verificationEmailRateLimiter } from '../middleware/emailRateLimit.middleware';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/me', authenticate, getMe);
 // @route   POST /api/auth/forgot-password
 // @desc    Request password reset
 // @access  Public
-router.post('/forgot-password', forgotPassword);
+router.post('/forgot-password', passwordResetRateLimiter, forgotPassword);
 
 // @route   POST /api/auth/reset-password
 // @desc    Reset password with token
@@ -38,6 +39,6 @@ router.get('/verify-email', verifyEmail);
 // @route   POST /api/auth/resend-verification
 // @desc    Resend verification email
 // @access  Public
-router.post('/resend-verification', resendVerification);
+router.post('/resend-verification', verificationEmailRateLimiter, resendVerification);
 
 export default router;

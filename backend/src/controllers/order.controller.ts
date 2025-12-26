@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
+import mongoose, { ClientSession } from 'mongoose';
 import Order from '../models/Order';
 import Product from '../models/Product';
 import Chat from '../models/Chat';
@@ -101,7 +101,7 @@ export const getOrder = async (req: Request, res: Response) => {
 // @access  Private
 export const createOrder = async (req: Request, res: Response) => {
   // session and createdOrder declared here so outer catch can access them
-  let session: any = undefined;
+  let session: ClientSession | undefined = undefined;
   let createdOrder: any = undefined;
   try {
     const { customerPhone, customerName, items, deliveryAddress, delivery, notes } = req.body;
@@ -232,7 +232,7 @@ export const createOrder = async (req: Request, res: Response) => {
       // order returned from create() is an array because we used create([...])
       createdOrder = order[0];
     } catch (err) {
-      try { if (session && typeof session.inTransaction === 'function' && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
+      try { if (session && session.inTransaction()) await session.abortTransaction(); } catch (e) {}
       try { if (session) session.endSession(); } catch (e) {}
       throw err;
     }
