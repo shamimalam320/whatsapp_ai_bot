@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { getRedisClient } from '../utils/redis';
 
-const redis = getRedisClient();
-
+// NOTE: `getRedisClient()` is intentionally called inside the request handler
+// so the Redis client is initialized lazily. The Redis utility returns a
+// resilient/no-op cache adapter when Redis is unavailable, allowing the
+// location lookup to gracefully degrade without failing the application.
 export async function getPincode(req: Request, res: Response) {
   const { pincode } = req.params;
   if (!/^[0-9]{6}$/.test(pincode)) {
@@ -11,6 +13,8 @@ export async function getPincode(req: Request, res: Response) {
   }
 
   try {
+    // Lazy-get redis client so we don't attempt connections at import time
+    const redis = getRedisClient();
     const cacheKey = `pincode:${pincode}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
