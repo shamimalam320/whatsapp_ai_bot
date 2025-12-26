@@ -8,6 +8,9 @@ export interface IUser extends Document {
   phone: string;
   role: 'admin' | 'seller';
   businessId?: mongoose.Types.ObjectId;
+  emailVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
   resetPasswordToken?: string;
   resetPasswordExpire?: Date;
   createdAt: Date;
@@ -48,6 +51,19 @@ const userSchema = new Schema<IUser>({
   businessId: {
     type: Schema.Types.ObjectId,
     ref: 'Business'
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false,
+    required: true
+  },
+  emailVerificationToken: {
+    type: String,
+    select: false
+  },
+  emailVerificationExpires: {
+    type: Date,
+    select: false
   },
   resetPasswordToken: {
     type: String,

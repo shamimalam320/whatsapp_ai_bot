@@ -17,7 +17,7 @@ export default function ForgotPassword() {
     setIsSubmitting(true);
 
     try {
-      const data = await fetchJson('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      const data = await fetchJson('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
       if (data.success) {
         setMessage(data.message || 'Password reset instructions have been sent to your email address.');
         setEmail('');
@@ -25,7 +25,14 @@ export default function ForgotPassword() {
         setError(data.message || 'Failed to send reset email. Please try again.');
       }
     } catch (err: any) {
-      if (err.message === 'unauthorized') { setError('Session expired. Please login again.'); return; }
+      // The forgot-password flow is intended for users who have lost access,
+      // so treating an 'unauthorized' error as a session expiry is misleading.
+      // Show a generic failure message instead (do not reveal whether the
+      // email exists or require authentication to request a reset).
+      if (err.message === 'unauthorized') {
+        setError('Failed to send reset email. Please try again.');
+        return;
+      }
       setError('Failed to connect to server. Please try again.');
     } finally {
       setIsSubmitting(false);

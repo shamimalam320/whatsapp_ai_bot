@@ -247,6 +247,25 @@ whatsapp_ai_bot/
 - Code editor (VS Code recommended)
 ```
 
+### Testing: MongoDB replica set (note)
+
+The test suite uses an in-memory MongoDB replica set (via `mongodb-memory-server`) so that transactions are available during tests. By default the test setup starts a single-member replica set for faster startup and lower resource usage. While this enables transactions, a single-member replica set does **not** simulate replica set behaviors such as failover or elections.
+
+If you want more realistic replica-set behavior locally or in CI, set the `TEST_REPLICA_SET_COUNT` environment variable to `3` (or higher) before running tests. Example (POSIX):
+
+```
+TEST_REPLICA_SET_COUNT=3 npm test
+```
+
+On Windows PowerShell:
+
+```
+$env:TEST_REPLICA_SET_COUNT=3; npm test
+```
+
+Note: multi-member replica sets take longer to initialize and use more resources.
+
+
 ### Installation Commands
 
 ```bash

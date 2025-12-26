@@ -5,6 +5,7 @@ import Layout from '../components/Layout';
 import { useAuthStore } from '../store/authStore';
 import { createOrder as createOrderApi, getOrders as getOrdersApi, updateOrderStatus as updateOrderStatusApi } from '../api/orders';
 import { getProducts } from '../api/products';
+import { isE164, E164_EXAMPLE } from '../utils/phone';
 
 interface OrderItem {
   productId: string;
@@ -88,6 +89,7 @@ export default function Orders() {
   });
 
   const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   const getToken = () => localStorage.getItem('token');
   // Authentication and error handling are handled inline where needed.
@@ -247,6 +249,11 @@ export default function Orders() {
 
   const hasStockIssues = () => {
     // true if any item is requesting more than available or product is out of stock
+    // NOTE: currently this uses `p?.stock ?? 0`, which treats a missing `stock`
+    // value as 0. That blocks orders for products that don't track inventory
+    // (e.g. services or digital products). Consider treating undefined stock
+    // as "untracked" (allow orders) and only enforce the check when stock is
+    // an explicit number. Example change: `const available = typeof p?.stock === 'number' ? p.stock : Infinity;`
     return createForm.items.some((item) => {
       const p = products.find((pr) => pr._id === item.productId);
       const available = p?.stock ?? 0;
@@ -262,10 +269,9 @@ export default function Orders() {
       return;
     }
 
-    // Validate phone number (basic)
-    const phoneRegex = /^[+]?[\d\s()-]{10,}$/;
-    if (!phoneRegex.test(createForm.customerPhone)) {
-      alert('Please enter a valid phone number');
+    // Validate phone number (E.164 required)
+    if (!isE164(createForm.customerPhone)) {
+      setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
       return;
     }
 
@@ -717,13 +723,20 @@ export default function Orders() {
                       <input
                         type="tel"
                         required
+                        placeholder="+919876543210 (E.164)"
                         value={createForm.customerPhone}
-                        onChange={(e) =>
-                          setCreateForm({ ...createForm, customerPhone: e.target.value })
-                        }
-                        placeholder="+919876543210"
+                        onChange={(e) => {
+                          const phone = e.target.value;
+                          setCreateForm({ ...createForm, customerPhone: phone });
+                          if (phone && !isE164(phone)) {
+                            setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
+                          } else {
+                            setPhoneError(null);
+                          }
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                       />
+                      {phoneError && <div className="text-xs text-red-600 mt-1">{phoneError}</div>}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">

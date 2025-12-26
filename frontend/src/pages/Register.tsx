@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../api/auth';
+import { isE164, E164_EXAMPLE } from '../utils/phone';
 import { useAuthStore } from '../store/authStore';
 
 export default function Register() {
@@ -15,6 +16,7 @@ export default function Register() {
     phone: '',
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -30,11 +32,22 @@ export default function Register() {
         phone: formData.phone ? `+91${formData.phone}` : '',
       };
 
+      if (formattedData.phone && !isE164(formattedData.phone)) {
+        setError(`Phone must be in E.164 format (e.g. ${E164_EXAMPLE})`);
+        return;
+      }
+
       const response = await authAPI.register(formattedData);
 
-      if (response.success && response.data) {
-        // Registration successful - redirect to login
-        navigate('/login?registered=true');
+      if (response.success) {
+        // Check if requires verification
+        if (response.requiresVerification) {
+          setSuccess(response.message);
+          // Show success message and provide resend option
+        } else if (response.data) {
+          // Old flow - direct login
+          navigate('/login?registered=true');
+        }
       } else {
         if (response.errors && response.errors.length > 0) {
           setError(response.errors.map(e => e.msg).join(', '));
@@ -64,7 +77,20 @@ export default function Register() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {success && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-green-800 text-sm font-medium mb-2">✓ {success}</p>
+            <p className="text-green-700 text-xs mb-3">Please check your email inbox and spam folder.</p>
+            <button
+              onClick={() => navigate('/resend-verification')}
+              className="text-xs text-green-600 hover:text-green-700 underline"
+            >
+              Didn't receive the email? Resend verification
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4" hidden={!!success}>
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
               Full Name *

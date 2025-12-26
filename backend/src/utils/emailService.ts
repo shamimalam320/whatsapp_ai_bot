@@ -203,6 +203,68 @@ Visit your dashboard to get started!
 
     return this.sendEmail({ to: email, subject, html, text });
   }
+
+  async sendVerificationEmail(email: string, name: string, verificationUrl: string): Promise<boolean> {
+    const subject = 'Verify Your Email - WhatsApp AI Bot';
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+          .button { display: inline-block; padding: 12px 30px; background-color: #4F46E5; color: #ffffff !important; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: 600; }
+          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Welcome to WhatsApp AI Bot! 🎉</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${name},</h2>
+            <p>Thank you for registering! Please verify your email address to activate your account.</p>
+            
+            <p>Click the button below to verify your email:</p>
+            
+            <p style="text-align: center;">
+              <a href="${verificationUrl}" class="button">Verify Email Address</a>
+            </p>
+            
+            <p>Or copy and paste this link in your browser:</p>
+            <p style="word-break: break-all; color: #4F46E5;">${verificationUrl}</p>
+            
+            <p><strong>This link will expire in 24 hours.</strong></p>
+            
+            <p>If you didn't create this account, please ignore this email.</p>
+          </div>
+          <div class="footer">
+            <p>© 2025 WhatsApp AI Bot. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `
+Welcome to WhatsApp AI Bot!
+
+Hello ${name},
+
+Thank you for registering! Please verify your email address to activate your account.
+
+Click this link to verify your email: ${verificationUrl}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, please ignore this email.
+    `;
+
+    return this.sendEmail({ to: email, subject, html, text });
+  }
 }
 
 export const emailService = new EmailService();

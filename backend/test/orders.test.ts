@@ -72,6 +72,31 @@ test('cancelling order restores stock', async () => {
   expect(pAfter?.stock).toBe(10);
 });
 
+test('double cancelling does not double-restore stock', async () => {
+  const businessId = new mongoose.Types.ObjectId();
+  const product = await Product.create({ businessId, name: 'test', price: 100, category: 'cat', description: 'd', stock: 10, inStock: true });
+
+  const createReq = makeReq({ customerPhone: '+911234567893', items: [{ productId: product._id.toString(), quantity: 3 }] }, { businessId });
+  const createRes = makeRes();
+  await createOrder(createReq, createRes);
+  expect(createRes._status).toBe(201);
+  const created = createRes._json.data;
+
+  // cancel the order twice
+  const cancelReq = { params: { id: created._id }, body: { status: 'cancelled' }, user: { businessId } } as any;
+  const cancelRes1 = makeRes();
+  await updateOrderStatus(cancelReq, cancelRes1);
+  expect(cancelRes1._status).toBe(200);
+
+  const cancelRes2 = makeRes();
+  await updateOrderStatus(cancelReq, cancelRes2);
+  expect(cancelRes2._status).toBe(200);
+
+  const pAfter = await Product.findById(product._id);
+  // stock should have been restored exactly once (back to 10)
+  expect(pAfter?.stock).toBe(10);
+});
+
 test('concurrent orders do not oversell (one wins)', async () => {
   const businessId = new mongoose.Types.ObjectId();
   const product = await Product.create({ businessId, name: 'concurrent', price: 50, category: 'cat', description: 'd', stock: 10, inStock: true });
