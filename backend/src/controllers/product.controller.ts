@@ -329,6 +329,26 @@ export const updateProduct = async (req: Request, res: Response) => {
         });
     }
 
+      // sanitize variants if provided in update payload
+      if (updatePayload.variants) {
+        // accept either array of {name,price} or semicolon CSV style string
+        let sanitizedVariants: any[] = [];
+        if (Array.isArray(updatePayload.variants)) {
+          sanitizedVariants = updatePayload.variants.map((v: any) => ({
+            name: String(v.name || '').trim(),
+            price: Math.max(0, parseFloat(String(v.price || 0)) || 0),
+          })).filter((v: any) => v.name);
+        } else if (typeof updatePayload.variants === 'string') {
+          const parts = updatePayload.variants.split(';').map((s: string) => s.trim()).filter(Boolean);
+          for (const p of parts) {
+            const [n, pr] = p.split(':').map((s: string) => s.trim());
+            const vprice = Math.max(0, parseFloat(pr || '0') || 0);
+            if (n) sanitizedVariants.push({ name: n, price: vprice });
+          }
+        }
+        updatePayload.variants = sanitizedVariants;
+      }
+
     // If the client sent a list of deleted images (strings), attempt to remove those files from disk
     const deletedImages: string[] = Array.isArray(req.body.deletedImages) ? req.body.deletedImages : [];
     const uploadsDir = path.join(__dirname, '..', '..', 'uploads');

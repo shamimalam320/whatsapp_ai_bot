@@ -11,6 +11,7 @@ export interface IProduct extends Document {
   description: string;
   descriptionHindi?: string;
   price: number;
+  variants?: { name: string; price: number }[];
   category: string;
   images: string[];
   inStock: boolean;
@@ -70,6 +71,15 @@ const productSchema = new Schema<IProduct>({
   },
   images: {
     type: [String],
+    default: []
+  },
+  variants: {
+    type: [
+      {
+        name: { type: String, required: true, trim: true },
+        price: { type: Number, required: true, min: 0 }
+      }
+    ],
     default: []
   },
   inStock: {

@@ -16,6 +16,10 @@ class EmailService {
     this.initializeTransporter();
   }
 
+  private getCurrentYear() {
+    return new Date().getFullYear();
+  }
+
   private initializeTransporter() {
     const emailConfig = {
       host: process.env.SMTP_HOST,
@@ -87,6 +91,7 @@ class EmailService {
 
   async sendPasswordResetEmail(email: string, resetUrl: string): Promise<boolean> {
     const subject = 'Password Reset Request - WhatsApp AI';
+    const year = this.getCurrentYear();
     const html = `
       <!DOCTYPE html>
       <html>
@@ -119,6 +124,7 @@ class EmailService {
           </div>
           <div class="footer">
             <p>WhatsApp AI - Automated Customer Support</p>
+            <p>© ${year} WhatsApp AI Bot. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -137,11 +143,14 @@ This link will expire in 1 hour.
 If you didn't request this password reset, please ignore this email.
     `;
 
-    return this.sendEmail({ to: email, subject, html, text });
+    const textWithFooter = text + `\n\n© ${year} WhatsApp AI Bot. All rights reserved.`;
+
+    return this.sendEmail({ to: email, subject, html, text: textWithFooter });
   }
 
   async sendWelcomeEmail(email: string, name: string): Promise<boolean> {
     const subject = 'Welcome to WhatsApp AI! 🎉';
+    const year = this.getCurrentYear();
     const html = `
       <!DOCTYPE html>
       <html>
@@ -180,6 +189,7 @@ If you didn't request this password reset, please ignore this email.
           </div>
           <div class="footer">
             <p>WhatsApp AI - Automated Customer Support</p>
+            <p>© ${year} WhatsApp AI Bot. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -201,11 +211,14 @@ Getting Started:
 Visit your dashboard to get started!
     `;
 
-    return this.sendEmail({ to: email, subject, html, text });
+    const textWithFooter = text + `\n\n© ${year} WhatsApp AI Bot. All rights reserved.`;
+
+    return this.sendEmail({ to: email, subject, html, text: textWithFooter });
   }
 
   async sendVerificationEmail(email: string, name: string, verificationUrl: string): Promise<boolean> {
     const subject = 'Verify Your Email - WhatsApp AI Bot';
+    const year = this.getCurrentYear();
     const html = `
       <!DOCTYPE html>
       <html>
@@ -242,7 +255,7 @@ Visit your dashboard to get started!
             <p>If you didn't create this account, please ignore this email.</p>
           </div>
           <div class="footer">
-            <p>© 2025 WhatsApp AI Bot. All rights reserved.</p>
+            <p>© ${year} WhatsApp AI Bot. All rights reserved.</p>
           </div>
         </div>
       </body>

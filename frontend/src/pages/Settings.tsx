@@ -43,6 +43,8 @@ export default function Settings() {
   useEffect(() => {
     fetchProfile();
     fetchTemplates();
+    // Clear phoneError when component mounts to avoid stale error state
+    setPhoneError(null);
   }, []);
 
   const fetchTemplates = async () => {
@@ -107,11 +109,18 @@ export default function Settings() {
     e.preventDefault();
     setMessage('');
     setError('');
+    setPhoneError(null);
+
+    // Validate before setting saving state
+    if (!isE164(whatsappNumber)) {
+      setError(`WhatsApp number must be E.164 (e.g. ${E164_EXAMPLE})`);
+      return;
+    }
+
     setSaving(true);
 
     try {
       try {
-        if (!isE164(whatsappNumber)) { setError(`WhatsApp number must be E.164 (e.g. ${E164_EXAMPLE})`); return; }
         const data = await fetchJson('/api/business/whatsapp/connect', { method: 'POST', body: JSON.stringify({ whatsappNumber }) });
         if (data.success) {
           setMessage('✅ WhatsApp connected successfully! You can now receive messages.');
@@ -131,16 +140,22 @@ export default function Settings() {
       setSaving(false);
     }
   };
-
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage('');
     setError('');
+    setPhoneError(null);
+
+    // Validate before setting saving state
+    if (profile?.phone && !isE164(profile.phone)) {
+      setError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
+      return;
+    }
+
     setSaving(true);
 
     try {
       try {
-        if (profile?.phone && !isE164(profile.phone)) { setError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`); return; }
         const data = await fetchJson('/api/business/profile', { method: 'PUT', body: JSON.stringify(profile) });
         if (data.success) {
           setMessage('✅ Profile updated successfully!');
@@ -384,24 +399,25 @@ export default function Settings() {
               </button>
             </div>
           </form>
-            {/* AI Settings JSON editor */}
-            <div className="mt-6 bg-gray-50 p-4 rounded">
-              <h3 className="text-sm font-semibold mb-2">Advanced AI Settings (JSON)</h3>
-              <textarea value={aiSettingsJson} onChange={(e)=>setAiSettingsJson(e.target.value)} rows={8} className="w-full border rounded p-2 text-xs font-mono" />
-              <div className="flex justify-end mt-3">
-                <button onClick={async ()=>{
-                  setSaving(true); setMessage(''); setError('');
-                  try {
-                    const { updateAiSettings } = await import('../api/aiSettings');
-                    const parsed = aiSettingsJson ? JSON.parse(aiSettingsJson) : {};
-                    const res = await updateAiSettings(parsed);
-                    if (res.success) setMessage('✅ Advanced AI settings saved');
-                    else setError(res.message || 'Failed to save');
-                  } catch (err:any) { console.error(err); setError('Invalid JSON or save failed'); }
-                  finally { setSaving(false); }
-                }} className="px-4 py-2 bg-green-600 text-white rounded">Save JSON</button>
-              </div>
+
+          {/* AI Settings JSON editor */}
+          <div className="mt-6 bg-gray-50 p-4 rounded">
+            <h3 className="text-sm font-semibold mb-2">Advanced AI Settings (JSON)</h3>
+            <textarea value={aiSettingsJson} onChange={(e)=>setAiSettingsJson(e.target.value)} rows={8} className="w-full border rounded p-2 text-xs font-mono" />
+            <div className="flex justify-end mt-3">
+              <button onClick={async ()=>{
+                setSaving(true); setMessage(''); setError('');
+                try {
+                  const { updateAiSettings } = await import('../api/aiSettings');
+                  const parsed = aiSettingsJson ? JSON.parse(aiSettingsJson) : {};
+                  const res = await updateAiSettings(parsed);
+                  if (res.success) setMessage('✅ Advanced AI settings saved');
+                  else setError(res.message || 'Failed to save');
+                } catch (err:any) { console.error(err); setError('Invalid JSON or save failed'); }
+                finally { setSaving(false); }
+              }} className="px-4 py-2 bg-green-600 text-white rounded">Save JSON</button>
             </div>
+          </div>
         </div>
 
         {/* Templates */}
