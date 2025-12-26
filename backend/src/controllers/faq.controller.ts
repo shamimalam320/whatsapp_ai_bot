@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import Faq from '../models/Faq';
 import { logger } from '../utils/logger';
-import mongoose from 'mongoose';
 
 export const listFaqs = async (req: Request, res: Response) => {
   try {
