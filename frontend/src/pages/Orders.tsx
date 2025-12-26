@@ -272,7 +272,6 @@ export default function Orders() {
     // Validate phone number (E.164 required)
     if (!isE164(createForm.customerPhone)) {
       setPhoneError(`Phone must be E.164 (e.g. ${E164_EXAMPLE})`);
-      alert(`Please enter a phone number in E.164 format (e.g. ${E164_EXAMPLE})`);
       return;
     }
 
